@@ -1,0 +1,195 @@
+# Default policy for mcp-trade-firewall.
+# Versioned config consumed by firewall.policy.PolicyEngine.
+#
+# Values here are conservative defaults sized for paper trading. Review and
+# tune every threshold before pointing this at a live account.
+#
+# Each rule's `type` must be registered in firewall.rules.RULE_TYPES, or
+# PolicyEngine.from_yaml raises at load time. Fields beyond id/type/enabled/
+# severity/regulation_ref are type-specific params -- see the corresponding
+# module in src/firewall/rules/ for what each one means.
+
+version: "0.4.0" # 0.4.0: added cooldown_after_loss (new hard rule)
+
+rules:
+  # SEC Rule 15c3-5(c)(1)(i): pre-trade controls must cap the value of a
+  # single order.
+  - id: notional-cap-single-order
+    type: notional_cap
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
+    max_usd: 5000
+    tool_match: ["order"]
+
+  # SEC Rule 15c3-5(c)(1)(i): pre-trade controls must cap maximum position
+  # size per instrument, checked against currently-held exposure plus this
+  # order.
+  - id: position-cap-per-symbol
+    type: position_cap
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
+    max_usd_per_symbol: 20000
+    tool_match: ["order"]
+
+  # SEC Rule 15c3-5(c)(2)(ii): algorithmic trading must be restricted to a
+  # defined, reviewed set of instruments rather than trading anything on
+  # request.
+  - id: symbol-allowlist
+    type: symbol_allowlist
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(2)(ii)"
+    allowed_symbols: ["AAPL", "MSFT", "SPY", "QQQ"]
+    tool_match: ["order"]
+
+  # UNMAPPED: no verified US federal/FINRA citation confirmed specifically
+  # for a GTC (good-til-canceled) time-in-force restriction; regulation_ref
+  # stays null until one is verified. GTC orders stay live across sessions,
+  # so they can execute against stale risk assumptions long after the agent
+  # moved on -- rejected by default; enable allow_gtc to permit them. This
+  # rule only ever rejects the call, never rewrites time_in_force to a
+  # different value. Placed here, ahead of the market-data-dependent gates
+  # (cvar-gate, pct-of-adv), so a GTC rejection is never masked by one of
+  # those failing closed on missing account_equity/bars first -- this is a
+  # pure payload check with no data dependency.
+  - id: gtc-restriction
+    type: gtc_restriction
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    allow_gtc: false
+    tool_match: ["order"]
+
+  # SEC Rule 15c3-5(b); FINRA Regulatory Notice 15-09: pre-trade controls
+  # must prevent erroneous or disorderly bulk actions (cancel-all,
+  # close-all, liquidate) absent a human in the loop for that specific
+  # action.
+  - id: blast-radius-bulk-actions
+    type: blast_radius
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(b); FINRA Regulatory Notice 15-09"
+    tool_match: ["cancel_all", "close_all", "liquidate"]
+    approval_state_key: "human_approved"
+
+  # SEC Rule 15c3-5(c)(1)(i): same basis as drawdown-killswitch below -- an
+  # automated halt on breach of a defined loss limit -- but windowed and
+  # self-clearing rather than session-cumulative and human-reset-only.
+  # Blocks ALL order placement, not just the call that tripped it, for
+  # cooldown_duration_seconds once realized loss within cooldown_loss_window
+  # exceeds cooldown_loss_threshold.
+  #
+  # Placed ahead of drawdown-killswitch deliberately: PolicyEngine.evaluate
+  # short-circuits on the first triggered hard rule, and this rule needs to
+  # keep running on every call (even while blocked) so it notices its own
+  # cooldown expiring and logs a state_exited record. A session that trips
+  # this also often trips the killswitch, whose latch never releases itself
+  # -- if the killswitch ran first, this rule's check() would stop being
+  # called at all once both are tripped, and its cooldown would never be
+  # observed expiring (no state_exited, ever). The narrower, self-clearing
+  # control goes first so it stays live regardless of what else also fires.
+  - id: cooldown-after-loss
+    type: cooldown_after_loss
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
+    cooldown_loss_threshold: 500
+    cooldown_loss_window: 300
+    cooldown_duration_seconds: 900
+    tool_match: ["order"]
+
+  # SEC Rule 15c3-5(c)(1)(i): pre-trade controls must include an automated
+  # kill switch that halts order placement once losses breach a defined
+  # session limit, and that stays tripped until a human explicitly resets
+  # it.
+  - id: drawdown-killswitch
+    type: drawdown_killswitch
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
+    session_pnl_threshold_usd: -1000
+    tool_match: ["order"]
+
+  # SEC Rule 15c3-5(c)(1)(ii): pre-trade controls must throttle the rate of
+  # automated order submission to prevent runaway/erroneous order flow.
+  # Stays paused after a breach until a human explicitly resets it.
+  - id: order-rate-throttle
+    type: order_rate_throttle
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(ii)"
+    max_orders: 20
+    window_seconds: 60
+    place_tool_match: ["place_stock_order", "place_option_order", "place_crypto_order"]
+
+  # UNMAPPED: an excessive place/cancel ratio on a single symbol, once a
+  # meaningful sample of orders has occurred, is a spoofing / layering
+  # signature and must halt further orders on that symbol. No verified
+  # US federal/FINRA citation has been confirmed for this specific
+  # heuristic yet -- do not approximate one; regulation_ref stays null
+  # until a citation is verified.
+  - id: place-cancel-ratio
+    type: place_cancel_ratio
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    ratio_threshold: 0.9
+    window_seconds: 300
+    min_orders_in_window: 5
+    place_tool_match: ["place_stock_order", "place_option_order", "place_crypto_order"]
+
+  # FINRA Rule 5210; 15 U.S.C. 78i(a)(2); 17 CFR 240.10b-5; FINRA Rule 2020:
+  # multiple unfilled orders stacked at distinct price levels on one side,
+  # followed by a trade on the other side, is a classic layering signature.
+  # Flagged for review (severity: soft) rather than auto-blocked, since this
+  # pattern can superficially resemble a legitimate scale-in/scale-out
+  # strategy -- see layering_detector's negative test.
+  - id: layering-detector
+    type: layering_detector
+    enabled: true
+    severity: soft
+    regulation_ref: "FINRA Rule 5210; 15 U.S.C. 78i(a)(2); 17 CFR 240.10b-5; FINRA Rule 2020"
+    window_seconds: 30
+    min_distinct_price_levels: 3
+    place_tool_match: ["place_stock_order", "place_option_order", "place_crypto_order"]
+
+  # FINRA Rule 5210.02: offsetting buy/sell pairs that net to ~zero position
+  # change are a wash-trade signature. Flagged for review (severity: soft)
+  # rather than auto-blocked, for the same false-positive reasons as
+  # layering.
+  - id: wash-trade-detector
+    type: wash_trade_detector
+    enabled: true
+    severity: soft
+    regulation_ref: "FINRA Rule 5210.02"
+    window_seconds: 300
+    qty_tolerance: 0.01
+    place_tool_match: ["place_stock_order", "place_option_order", "place_crypto_order"]
+
+  # UNMAPPED: historical-simulation CVaR as a pre-trade risk gate is not
+  # itself named in the verified citation mapping from the original
+  # regulation_ref migration -- do not approximate one; regulation_ref
+  # stays null until a citation is verified.
+  - id: cvar-gate
+    type: cvar_gate
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    cvar_lookback_days: 90
+    cvar_alpha: 0.95
+    cvar_max_loss_pct_of_equity: 0.02 # 2% of current account equity, per position
+    tool_match: ["order"]
+
+  # UNMAPPED: same as cvar-gate above -- no verified US federal/FINRA
+  # citation confirmed specifically for a percent-of-ADV market-impact
+  # gate; regulation_ref stays null until one is verified.
+  - id: pct-of-adv
+    type: pct_of_adv
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    adv_lookback_days: 30
+    max_percent_of_adv: 0.01 # 1%
+    tool_match: ["order"]
