@@ -1,0 +1,24 @@
+# Environment
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+
+# Logs / audit output
+*.jsonl
+
+# Editors
+.vscode/
+.idea/
+
+# Unrelated local tooling artifact (binary agent-memory lock file, not
+# produced by or read by anything in this repo)
+agentdb.rvf
+agentdb.rvf.lock
