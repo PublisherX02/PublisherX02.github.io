@@ -3,6 +3,12 @@
 # Strictness sweep point 5 of 5 (strictest). Used only by evals/run.py to
 # plot the ASR-vs-FPR tradeoff curve -- not a deployment config. Expect a
 # meaningfully higher FPR against corpus/benign.yaml at this end.
+#
+# gtc_restriction and cooldown_after_loss are deliberately excluded from
+# this sweep: gtc_restriction is a boolean policy choice (allow/disallow
+# GTC orders), not a value that graduates along a loose-to-strict axis;
+# cooldown_after_loss was a later addition to policies/default.yaml not
+# yet extended to the preset sweep. Neither is an oversight.
 
 version: "0.1.0-preset5"
 
@@ -28,7 +34,14 @@ rules:
     enabled: true
     severity: hard
     regulation_ref: "SEC Rule 15c3-5(c)(2)(ii)"
-    allowed_symbols: ["AAPL", "MSFT"]
+    allowed_symbols: ["AAPL", "MSFT",
+                       # Designated eval-harness market-data test symbols (see
+                       # evals/market_data_stub.py) -- present identically across
+                       # all 5 presets since they're baseline test coverage, not
+                       # a strictness choice. Not in policies/default.yaml: that
+                       # file is a realistic deployment config and these symbols
+                       # don't correspond to real tradable instruments.
+                       "ADVTHIN1", "CVARVOL1"]
     tool_match: ["order"]
 
   - id: blast-radius-bulk-actions
@@ -83,3 +96,95 @@ rules:
     window_seconds: 300
     qty_tolerance: 1.0
     place_tool_match: ["place_stock_order", "place_option_order", "place_crypto_order"]
+
+  - id: cvar-gate
+    type: cvar_gate
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    cvar_lookback_days: 90
+    cvar_alpha: 0.95
+    cvar_max_loss_pct_of_equity: 0.005 # 0.5% of current account equity, per position (strictest)
+    tool_match: ["order"]
+    market_data_timeout_seconds: 5.0
+    bars_cache_ttl_seconds: 1800.0
+
+  - id: pct-of-adv
+    type: pct_of_adv
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    adv_lookback_days: 30
+    max_percent_of_adv: 0.002 # 0.2% of ADV (strictest)
+    tool_match: ["order"]
+    market_data_timeout_seconds: 5.0
+    bars_cache_ttl_seconds: 1800.0
+
+  # Baseline coverage, not a strictness choice -- same configuration at
+  # every point on the sweep (see policies/default.yaml's comment on this
+  # rule and src/firewall/rules/unrecognized_tool_catchall.py). MUST STAY
+  # LAST.
+  - id: unrecognized-tool-catchall
+    type: unrecognized_tool_catchall
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(b); SEC Rule 15c3-5(c)(2)(ii)"
+    covered_patterns: ["order", "cancel_all", "close_all", "liquidate"]
+    read_only_whitelist:
+      - fetch_alpaca_doc
+      - get_account_activities
+      - get_account_activities_by_type
+      - get_account_config
+      - get_account_info
+      - get_all_assets
+      - get_all_positions
+      - get_alpaca_endpoint_docs
+      - get_asset
+      - get_calendar
+      - get_clock
+      - get_corporate_action_announcement
+      - get_corporate_action_announcements
+      - get_corporate_actions
+      - get_crypto_bars
+      - get_crypto_latest_bar
+      - get_crypto_latest_orderbook
+      - get_crypto_latest_quote
+      - get_crypto_latest_trade
+      - get_crypto_quotes
+      - get_crypto_snapshot
+      - get_crypto_trades
+      - get_fixed_income_latest_quotes
+      - get_index_latest_values
+      - get_index_values
+      - get_locate
+      - get_locate_quotes
+      - get_locates
+      - get_market_movers
+      - get_most_active_stocks
+      - get_news
+      - get_open_position
+      - get_option_bars
+      - get_option_chain
+      - get_option_contract
+      - get_option_contracts
+      - get_option_exchange_codes
+      - get_option_latest_quote
+      - get_option_latest_trade
+      - get_option_snapshot
+      - get_option_trades
+      - get_order_by_client_id
+      - get_order_by_id
+      - get_orders
+      - get_portfolio_history
+      - get_stock_bars
+      - get_stock_latest_bar
+      - get_stock_latest_quote
+      - get_stock_latest_trade
+      - get_stock_quotes
+      - get_stock_snapshot
+      - get_stock_trades
+      - get_watchlist_by_id
+      - get_watchlists
+      - list_alpaca_api_endpoints
+      - search_alpaca_api_specs
+      - search_alpaca_docs

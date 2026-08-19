@@ -20,6 +20,7 @@ from firewall.rules.pct_of_adv import PctOfAdvRule
 from firewall.rules.place_cancel_ratio import PlaceCancelRatioRule
 from firewall.rules.position_cap import PositionCapRule
 from firewall.rules.symbol_allowlist import SymbolAllowlistRule
+from firewall.rules.unrecognized_tool_catchall import UnrecognizedToolCatchallRule
 from firewall.rules.wash_trade_detector import WashTradeDetectorRule
 
 RULE_TYPES: dict[str, type[Rule]] = {
@@ -36,6 +37,7 @@ RULE_TYPES: dict[str, type[Rule]] = {
     "pct_of_adv": PctOfAdvRule,
     "gtc_restriction": GTCRestrictionRule,
     "cooldown_after_loss": CooldownAfterLossRule,
+    "unrecognized_tool_catchall": UnrecognizedToolCatchallRule,
 }
 
 __all__ = ["Rule", "RuleConfig", "RuleOutcome", "RULE_TYPES"]

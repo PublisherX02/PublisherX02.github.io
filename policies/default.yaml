@@ -181,6 +181,9 @@ rules:
     cvar_alpha: 0.95
     cvar_max_loss_pct_of_equity: 0.02 # 2% of current account equity, per position
     tool_match: ["order"]
+    market_data_timeout_seconds: 5.0 # was a Python-only default (conformance-audit
+                                      # finding D5) -- same value, now YAML-driven
+    bars_cache_ttl_seconds: 1800.0 # 30 minutes; same value, now YAML-driven
 
   # UNMAPPED: same as cvar-gate above -- no verified US federal/FINRA
   # citation confirmed specifically for a percent-of-ADV market-impact
@@ -193,3 +196,6 @@ rules:
     adv_lookback_days: 30
     max_percent_of_adv: 0.01 # 1%
     tool_match: ["order"]
+    market_data_timeout_seconds: 5.0 # was a Python-only default (conformance-audit
+                                      # finding D5) -- same value, now YAML-driven
+    bars_cache_ttl_seconds: 1800.0 # 30 minutes; same value, now YAML-driven
