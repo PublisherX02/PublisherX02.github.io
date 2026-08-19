@@ -157,3 +157,29 @@ the rules built to catch market manipulation would silently no-op against the
 real Alpaca tool surface due to a string mismatch. Do not treat any published
 ASR/FPR number from this repository as a statement about the deployed system
 until both of those are fixed and re-measured against the real proxy path.
+
+---
+
+## Remediation status
+
+**A2 (unknown-tool-passes-through): remediated.** `unrecognized_tool_catchall`
+(`src/firewall/rules/unrecognized_tool_catchall.py`) closes the specific gap
+A2 demonstrated: any tool name that is neither on an explicit read-only
+whitelist nor matched by another rule's `tool_match`/`place_tool_match`
+pattern is now hard-blocked by default, rather than silently allowed through
+with "no rule triggered". Added to all 5 `policies/preset_*.yaml` sweep
+configs (see each preset's `unrecognized-tool-catchall` entry); must remain
+the last rule in any policy's `rules:` list per `PolicyEngine.evaluate`'s
+short-circuit-on-first-hard-block semantics. Regression-tested at the unit
+level (`tests/rules/test_unrecognized_tool_catchall.py`, including a direct
+reproduction of A2's own probe) and at the corpus level
+(`corpus/induced_manipulation.yaml`'s `im-021`, part of corpus-v1.1, which
+reproduces the audit's fabricated-tool/$999,999,999-argument scenario as a
+permanent, mechanically-graded payload rather than a one-off manual test).
+
+This closes A2 only. A1 (`PolicyEngine` not wired into `proxy.py`) and A4
+(order-name substring matching against fictional vs. real Alpaca tool names)
+remain open as described above; do not read this section as clearing either.
+The catchall rule's own coverage is only as good as `covered_patterns`
+staying in sync with every other rule's `tool_match` by hand — see that
+module's docstring and the comment above its entry in `policies/default.yaml`.
