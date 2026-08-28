@@ -108,6 +108,22 @@ def test_non_positive_close_price_fails_closed():
     assert "insufficient volume history to assess liquidity risk" in outcome.reason
 
 
+def test_string_typed_qty_and_price_is_assessed_not_skipped():
+    # Conformance-audit finding A4 (live-execution shape): a string-typed
+    # qty/limit_price (Alpaca's real place_stock_order schema) must be
+    # parsed into a real notional and risk-assessed, not silently skipped.
+    rule, calls = _rule(_bars_result([100_000.0] * 20), max_percent_of_adv=0.10)
+
+    outcome = rule.check(
+        "place_stock_order",
+        {"symbol": "AAPL", "qty": "20000", "limit_price": "100.00"},
+        {},
+    )
+
+    assert outcome.triggered
+    assert calls == [("AAPL", 30)]
+
+
 def test_within_cap_does_not_trigger():
     # ADV = 100,000 shares; order is $500,000 notional / $100 current price
     # = 5,000 shares -> 5% of ADV, under a 10% cap.

@@ -1,0 +1,118 @@
+name: CD
+
+# Deliberately tag-triggered only — never on every push to main. A release
+# is a decision, not a side effect of a commit. Push a tag like v0.3.0 to
+# trigger this.
+on:
+  push:
+    tags: ['v*.*.*']
+
+env:
+  ALPACA_PAPER_TRADE: "true"
+  ALPACA_API_KEY: "PKCIDUMMYNOTAREALKEY0000"
+  ALPACA_SECRET_KEY: "ci-dummy-not-a-real-secret"
+
+jobs:
+
+  # ── Re-verify the critical gates in THIS workflow, don't just trust that ─
+  # ── CI passed on this commit at some earlier point. Cheap insurance. ─────
+
+  verify-before-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - run: pip install -e ".[dev]"
+      - run: pytest -v --tb=short
+      - name: Eval harness gate must pass before anything gets published
+        run: |
+          python evals/run.py --config default --seed 1337 --out evals/out/release_check.json
+          GATE=$(python -c "import json; print(json.load(open('evals/out/release_check.json'))['gate'])")
+          if [ "$GATE" != "PASS" ]; then
+            echo "::error::Eval gate failed — refusing to build/publish a release on top of this."
+            exit 1
+          fi
+
+  build-and-publish-image:
+    needs: verify-before-release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t mcp-trade-firewall:${{ github.ref_name }} .
+
+      # ── Regression test for the paper-trade guard, against the actual ────
+      # ── built image, not just the source — this is the artifact judges ───
+      # ── will run, so it's what needs to be proven safe. ───────────────────
+      - name: Confirm the built image refuses to start without ALPACA_PAPER_TRADE=true
+        run: |
+          set +e
+          docker run --rm -e ALPACA_PAPER_TRADE=false \
+            -e ALPACA_API_KEY=x -e ALPACA_SECRET_KEY=x \
+            mcp-trade-firewall:${{ github.ref_name }}
+          EXIT_CODE=$?
+          set -e
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "::error::Built image did NOT refuse to start with ALPACA_PAPER_TRADE=false. Refusing to publish."
+            exit 1
+          fi
+          echo "Confirmed: image correctly refuses live-mode startup (exit code $EXIT_CODE)."
+
+      - name: Confirm the built image starts normally in paper mode
+        run: |
+          docker run --rm -d --name smoke-test \
+            -e ALPACA_PAPER_TRADE=true \
+            -e ALPACA_API_KEY=${{ env.ALPACA_API_KEY }} \
+            -e ALPACA_SECRET_KEY=${{ env.ALPACA_SECRET_KEY }} \
+            mcp-trade-firewall:${{ github.ref_name }}
+          sleep 5
+          docker logs smoke-test
+          docker inspect smoke-test --format='{{.State.Status}}' | grep -q running
+          docker stop smoke-test
+
+      - name: Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Tag and push
+        run: |
+          IMAGE=ghcr.io/${{ github.repository_owner }}/mcp-trade-firewall
+          docker tag mcp-trade-firewall:${{ github.ref_name }} $IMAGE:${{ github.ref_name }}
+          docker tag mcp-trade-firewall:${{ github.ref_name }} $IMAGE:latest
+          docker push $IMAGE:${{ github.ref_name }}
+          docker push $IMAGE:latest
+
+  create-github-release:
+    needs: build-and-publish-image
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - run: pip install -e ".[dev]"
+
+      - name: Regenerate eval results and locate the latest audit report
+        run: |
+          python evals/run.py --config default --seed 1337 --out evals/out/release_results.json
+          # Adjust this glob to wherever AUDIT.md actually lands in this repo
+          ls AUDIT.md evals/out/release_results.json
+
+      - name: Create release with artifacts attached
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            evals/out/release_results.json
+            AUDIT.md
+          generate_release_notes: true
+          body: |
+            Docker image: `ghcr.io/${{ github.repository_owner }}/mcp-trade-firewall:${{ github.ref_name }}`
+
+            Paper trading only. See attached results.json for eval harness
+            output (ASR/FPR/utility against evals/thresholds.yaml) and
+            AUDIT.md for the most recent conformance audit.

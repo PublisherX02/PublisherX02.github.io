@@ -24,7 +24,10 @@ GENESIS_HASH = "0" * 64
 Verdict = Literal[
     "allow", "soft_block", "hard_block", "state_entered", "state_exited"
 ]
-UpstreamStatus = Literal["ok", "error", "not_forwarded"]
+# "pending" marks a record written before a call was actually forwarded --
+# forwarded/upstream_status aren't knowable yet at that point. See
+# `find_unresolved_pending` and `PolicyEngine.record_call_pending`.
+UpstreamStatus = Literal["ok", "error", "not_forwarded", "pending"]
 
 
 class AuditEvent(BaseModel):
@@ -39,6 +42,21 @@ class AuditEvent(BaseModel):
     identifies which rule's state changed; a dashboard groups
     state_entered/state_exited pairs by `rule_id` to render one continuous
     state span instead of reconstructing it from per-call blocks.
+
+    `call_id`/`pending_hash` implement crash-safe logging for allow/
+    soft_block calls specifically: `PolicyEngine.record_call_pending`
+    writes a "pending" record (forwarded=None, upstream_status="pending")
+    before the caller attempts to forward the call, and
+    `PolicyEngine.record_call_outcome` later writes a second, separate
+    "outcome" record carrying the real forwarded/upstream_status values,
+    the same `call_id`, and `pending_hash` set to
+    `compute_record_hash(pending_event)` -- an explicit reference back to
+    the pending record, independent of the two being adjacent in the file.
+    The pending record itself is never mutated; if the process dies
+    between the two writes, the pending record alone remains as proof a
+    call was attempted (see `find_unresolved_pending`). Both fields are
+    None on every other record (hard_block, state_entered/exited, or any
+    record written without this pattern).
     """
 
     event_id: str
@@ -50,9 +68,11 @@ class AuditEvent(BaseModel):
     rule_id: str | None
     regulation_ref: str | None
     reason: str
-    forwarded: bool
+    forwarded: bool | None
     upstream_status: UpstreamStatus
     prev_hash: str
+    call_id: str | None = None
+    pending_hash: str | None = None
 
 
 class AuditLogWriter:
@@ -88,10 +108,12 @@ class AuditLogWriter:
         arguments: dict[str, Any],
         verdict: Verdict,
         reason: str,
-        forwarded: bool,
+        forwarded: bool | None,
         upstream_status: UpstreamStatus,
         rule_id: str | None = None,
         regulation_ref: str | None = None,
+        call_id: str | None = None,
+        pending_hash: str | None = None,
     ) -> AuditEvent:
         event = AuditEvent(
             event_id=str(uuid.uuid4()),
@@ -106,12 +128,26 @@ class AuditLogWriter:
             forwarded=forwarded,
             upstream_status=upstream_status,
             prev_hash=self._prev_hash,
+            call_id=call_id,
+            pending_hash=pending_hash,
         )
         line = event.model_dump_json()
         with self.log_path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
         self._prev_hash = hashlib.sha256(line.encode("utf-8")).hexdigest()
         return event
+
+
+def compute_record_hash(event: AuditEvent) -> str:
+    """Hash of `event`'s serialized line, exactly as it would appear (or
+    already appears) in the JSONL file -- i.e. the same value the *next*
+    record's `prev_hash` carries if `event` is the immediately preceding
+    line. Lets a caller reference an earlier record it already holds (e.g.
+    an outcome record linking back to its pending record via
+    `pending_hash`) without depending on the writer's internal
+    `_prev_hash` state, which may have moved on if another record was
+    appended in between."""
+    return hashlib.sha256(event.model_dump_json().encode("utf-8")).hexdigest()
 
 
 def verify_chain(path: Path | str) -> tuple[bool, int | None]:
@@ -147,6 +183,62 @@ def verify_chain(path: Path | str) -> tuple[bool, int | None]:
     return True, None
 
 
+def find_unresolved_pending(
+    path: Path | str,
+    *,
+    now: datetime | None = None,
+    stale_after_seconds: float = 60.0,
+) -> list[AuditEvent]:
+    """Scan a JSONL audit log for "pending" records (written by
+    `PolicyEngine.record_call_pending` before a call was forwarded) that
+    have no matching "outcome" record -- a later record sharing the same
+    `call_id` with a non-"pending" `upstream_status`, written by
+    `PolicyEngine.record_call_outcome` once forwarding actually completed
+    -- and are older than `stale_after_seconds`.
+
+    An unresolved pending record almost always means the process died
+    between the two writes (see `FirewallMiddleware.on_call_tool`): the
+    call was attempted and policy-evaluated, but whether it ever reached
+    upstream, and what happened if it did, is genuinely unknown. A
+    dashboard or CLI should surface these as "call attempted, outcome
+    unknown" rather than silently treating a missing outcome as either
+    forwarded or not.
+
+    A pending record younger than `stale_after_seconds` is not flagged --
+    it may simply be a call still in flight. `now` defaults to the current
+    time; pass it explicitly for deterministic tests.
+    """
+    now = now if now is not None else datetime.now(timezone.utc)
+    path = Path(path)
+    if not path.exists():
+        return []
+
+    pending_by_call_id: dict[str, AuditEvent] = {}
+    resolved_call_ids: set[str] = set()
+
+    with path.open("r", encoding="utf-8") as f:
+        for raw_line in f:
+            line = raw_line.rstrip("\n")
+            if not line:
+                continue
+            event = AuditEvent.model_validate_json(line)
+            if event.call_id is None:
+                continue
+            if event.upstream_status == "pending":
+                pending_by_call_id[event.call_id] = event
+            else:
+                resolved_call_ids.add(event.call_id)
+
+    stale: list[AuditEvent] = []
+    for call_id, event in pending_by_call_id.items():
+        if call_id in resolved_call_ids:
+            continue
+        age_seconds = (now - datetime.fromisoformat(event.timestamp)).total_seconds()
+        if age_seconds >= stale_after_seconds:
+            stale.append(event)
+    return stale
+
+
 def _cli(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="python -m firewall.audit")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -154,6 +246,16 @@ def _cli(argv: list[str] | None = None) -> int:
         "verify", help="verify a JSONL audit log's hash chain"
     )
     verify_parser.add_argument("path", type=Path)
+    pending_parser = subparsers.add_parser(
+        "pending", help="list stale 'pending' records with no matching outcome"
+    )
+    pending_parser.add_argument("path", type=Path)
+    pending_parser.add_argument(
+        "--stale-after-seconds",
+        type=float,
+        default=60.0,
+        help="minimum age before an unresolved pending record is flagged (default: 60)",
+    )
     args = parser.parse_args(argv)
 
     if args.command == "verify":
@@ -165,6 +267,25 @@ def _cli(argv: list[str] | None = None) -> int:
             f"TAMPERED: chain broken at record index {bad_index} ({args.path})",
             file=sys.stderr,
         )
+        return 1
+
+    if args.command == "pending":
+        stale = find_unresolved_pending(
+            args.path, stale_after_seconds=args.stale_after_seconds
+        )
+        if not stale:
+            print(
+                f"OK: no unresolved pending records older than "
+                f"{args.stale_after_seconds}s ({args.path})"
+            )
+            return 0
+        for event in stale:
+            print(
+                f"UNRESOLVED: call_id={event.call_id} tool_name={event.tool_name!r} "
+                f"timestamp={event.timestamp} verdict={event.verdict} -- "
+                "call attempted, outcome unknown",
+                file=sys.stderr,
+            )
         return 1
 
     return 1

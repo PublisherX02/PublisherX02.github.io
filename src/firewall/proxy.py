@@ -6,8 +6,12 @@ stdio to whatever client connects to this proxy instead.
 
 Every call is evaluated against the real policy engine (`firewall.policy`)
 before any forwarding decision is made: hard_block verdicts never reach
-upstream, allow/soft_block verdicts are forwarded and their outcome is
-recorded to the audit log via `PolicyEngine.record_call_outcome`.
+upstream. allow/soft_block verdicts write a "pending" audit record via
+`PolicyEngine.record_call_pending` before forwarding is even attempted,
+then a linked "outcome" record via `PolicyEngine.record_call_outcome` once
+it completes -- two records, not one, so a process death between the two
+writes still leaves proof the call was attempted (see
+`firewall.audit.find_unresolved_pending`).
 """
 
 from __future__ import annotations
@@ -16,21 +20,46 @@ import json
 import os
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from fastmcp import Client, FastMCP
 from fastmcp.client.transports import UvxStdioTransport
-from fastmcp.exceptions import ToolError
+from fastmcp.exceptions import PromptError, ResourceError, ToolError
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
-from mcp.types import CallToolRequestParams
+from mcp.types import (
+    CallToolRequestParams,
+    GetPromptRequestParams,
+    ReadResourceRequestParams,
+    TextContent,
+)
 
+from firewall import account_data
 from firewall.audit import AuditLogWriter
 from firewall.order_history import OrderHistory
 from firewall.pnl_history import PnLHistory
 from firewall.policy import PolicyEngine
+from firewall.rules import hedge_proposal
+from firewall.rules._util import matches_any
+from firewall.rules.cvar_gate import CVaRGateRule
+from firewall.rules.drawdown_killswitch import DrawdownKillswitchRule
+from firewall.rules.hedge_proposal import HedgeProposalRule
+
+AccountPnLFetcher = Callable[[], "account_data.AccountPnLResult"]
+
+# Deliberately the same "order"-substring pattern as drawdown_killswitch's
+# own default tool_match (policies/default.yaml's drawdown-killswitch:
+# tool_match: ["order"]), not a narrower place/replace-only list: this gate
+# exists to skip the fetch for calls no rule with this data could ever
+# consult it on (get_account_info, close_position, ...), and matching the
+# rule's own reach exactly -- including read-only order queries like
+# get_orders, which also contain "order" and so still trigger a fetch --
+# is more defensible than a gate that disagrees with the rule it serves. A
+# few wasted fetches on read-only order calls is the accepted cost of that.
+_SESSION_PNL_RELEVANT_TOOLS = ("order",)
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY_PATH = REPO_ROOT / "policies" / "default.yaml"
@@ -43,6 +72,29 @@ def _policy_path() -> Path:
 
 def _audit_log_path() -> Path:
     return Path(os.environ.get("FIREWALL_AUDIT_LOG_PATH", DEFAULT_AUDIT_LOG_PATH))
+
+
+def _session_pnl_timeout_seconds() -> float:
+    return float(
+        os.environ.get(
+            "FIREWALL_SESSION_PNL_TIMEOUT_SECONDS", account_data.DEFAULT_TIMEOUT_SECONDS
+        )
+    )
+
+
+def _session_pnl_cache_ttl_seconds() -> float:
+    # Deliberately short (default 5s, not market_data.py's 1800s bars TTL):
+    # this gates a real-time trading halt (drawdown_killswitch). A killswitch
+    # reading stale equity for the length of the TTL is the direct cost of
+    # this value -- it exists as its own env var, not a hardcoded constant,
+    # so that tradeoff is tunable without editing source (see AUDIT.md D5's
+    # complaint about exactly this shape of Python-only default).
+    return float(
+        os.environ.get(
+            "FIREWALL_SESSION_PNL_CACHE_TTL_SECONDS",
+            account_data.DEFAULT_CACHE_TTL_SECONDS,
+        )
+    )
 
 
 def _default_policy_engine() -> PolicyEngine:
@@ -59,22 +111,394 @@ def _log_call(tool_name: str, arguments: dict[str, Any]) -> None:
     print(json.dumps(record), file=sys.stderr, flush=True)
 
 
+# Tool-name categorization for order_history recording. Reuses the same
+# substring-pattern matching approach unrecognized_tool_catchall uses
+# (firewall.rules._util.matches_any) rather than a fresh mechanism, applied
+# to the same real Alpaca tool names order_rate_throttle/wash_trade_detector/
+# place_cancel_ratio/layering_detector's own place_tool_match configs use.
+_PLACE_ORDER_TOOLS = ("place_stock_order", "place_option_order", "place_crypto_order")
+_CANCEL_ORDER_TOOLS = ("cancel_order_by_id",)
+_REPLACE_ORDER_TOOLS = ("replace_order_by_id",)
+
+_FILLED_STATUSES = {"filled"}
+_CANCELLED_STATUSES = {"canceled", "cancelled"}
+
+
+def _coerce_float(value: Any) -> float | None:
+    """Best-effort float conversion for order_history recording.
+
+    order_history is a historical record for other rules to read, not a
+    gate itself, so this is more permissive than
+    `firewall.rules._util._as_number`: that function also rejects
+    non-finite values (NaN/Infinity), because a rule's pass/fail
+    *decision* must fail closed on them rather than let a NaN silently
+    compare False against every threshold (see AUDIT.md finding A4). This
+    helper accepts anything Python's `float()` can parse, non-finite
+    included, since storing an odd value here changes no rule's decision
+    on the call being recorded, only what evidence a later call sees.
+    Returns None (not 0.0) when unparseable so the caller can tell
+    "genuinely absent" from "zero" and pick its own fallback.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _parse_order_result(result: Any) -> tuple[str | None, str]:
+    """Best-effort (order_id, outcome) extraction from a successful
+    place_*/replace_order_by_id call's ToolResult.
+
+    Alpaca's real order response is a JSON object with an "id"/"order_id"
+    field and a "status" field (e.g. "accepted", "new", "filled",
+    "canceled"); a fake test upstream may return something else entirely,
+    so every step here is defensive rather than assumed. Falls back to
+    (None, "open") on anything unparseable -- "open" (not "filled") is the
+    conservative default: an order this proxy cannot positively confirm as
+    filled or cancelled is assumed merely resting, consistent with this
+    codebase's existing bias toward the safer assumption on uncertain data
+    (see e.g. pct_of_adv.py's "over-blocking ... is the correct failure
+    direction").
+    """
+    outcome = "open"
+    order_id: str | None = None
+    content = getattr(result, "content", None) or []
+    if not content:
+        return order_id, outcome
+    text = getattr(content[0], "text", None)
+    if not isinstance(text, str):
+        return order_id, outcome
+    try:
+        payload = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
+        return order_id, outcome
+    if not isinstance(payload, dict):
+        return order_id, outcome
+
+    raw_id = payload.get("order_id") or payload.get("id")
+    if isinstance(raw_id, str) and raw_id:
+        order_id = raw_id
+
+    status = payload.get("status")
+    if isinstance(status, str):
+        status_lower = status.strip().lower()
+        if status_lower in _FILLED_STATUSES:
+            outcome = "filled"
+        elif status_lower in _CANCELLED_STATUSES:
+            outcome = "cancelled"
+    return order_id, outcome
+
+
 class FirewallMiddleware(Middleware):
     """Evaluates every tool call against `policy_engine` before deciding
     whether to forward it, and records the outcome to the audit log.
 
-    Session state (`order_history`/`pnl_history`) is accumulated in-memory
-    for the lifetime of this middleware instance. Populating it from real
-    upstream responses (fills, cancels, realized P&L) -- and seeding
-    `account_equity`, which cvar_gate/pct_of_adv require and fail closed
-    without -- is not implemented yet; until it is, rules that depend on
-    those inputs will correctly fail closed rather than silently skip.
+    Session state (`order_history`/`pnl_history`/`session_pnl_usd`) is
+    accumulated or fetched fresh for the lifetime of this middleware
+    instance. `order_history` is populated from real call outcomes (see
+    `_track_order_lifecycle` below) -- this reactivates
+    order_rate_throttle/wash_trade_detector/place_cancel_ratio/
+    layering_detector, which previously saw a permanently-empty history no
+    matter how many orders were placed (see AUDIT.md findings E3/E4).
+    `session_pnl_usd` (drawdown_killswitch) is now fetched fresh from
+    Alpaca's own account state on each order-related call (see
+    `account_data.fetch_session_pnl`, and its module docstring for why:
+    reusing Alpaca's own equity/last_equity computation rather than
+    re-deriving PnL locally from fills). `pnl_history` (cooldown_after_loss's
+    windowed *realized* P&L) and `account_equity`/`positions`
+    (cvar_gate/pct_of_adv/position_cap) are still not populated from real
+    upstream responses -- for `pnl_history` specifically, this was a
+    deliberate decision, not an oversight: Alpaca's account endpoints don't
+    cleanly expose a windowed, realized-only P&L series (see
+    `account_data`'s module docstring for what was checked and ruled out).
+    Those rules still correctly fail closed (cvar_gate/pct_of_adv) or
+    silently never trip (cooldown_after_loss) as documented in AUDIT.md.
+
+    Also calls `hedge_proposal.compute_proposal` directly after every
+    `evaluate()` (see `_propose_hedge_if_triggered`), independent of that
+    call's verdict -- see `firewall.rules.hedge_proposal`'s module
+    docstring for why this bypasses the normal RuleOutcome -> Warning ->
+    audit pipeline every other soft rule uses (short version: that
+    pipeline silently drops a soft rule's warning whenever the same call
+    also hard-blocks, which is exactly the case a hedge proposal matters
+    most in). Detection + audit only: this never submits anything.
     """
 
-    def __init__(self, policy_engine: PolicyEngine) -> None:
+    def __init__(
+        self,
+        policy_engine: PolicyEngine,
+        *,
+        account_pnl_fetcher: AccountPnLFetcher | None = None,
+        session_pnl_timeout_seconds: float = account_data.DEFAULT_TIMEOUT_SECONDS,
+        session_pnl_cache_ttl_seconds: float = account_data.DEFAULT_CACHE_TTL_SECONDS,
+    ) -> None:
         self.policy_engine = policy_engine
         self._order_history = OrderHistory()
         self._pnl_history = PnLHistory()
+        self._account_pnl_fetcher: AccountPnLFetcher = account_pnl_fetcher or (
+            lambda: account_data.fetch_session_pnl(
+                timeout_seconds=session_pnl_timeout_seconds,
+                cache_ttl_seconds=session_pnl_cache_ttl_seconds,
+            )
+        )
+        self._hedge_rule = self._find_rule("hedge-proposal", HedgeProposalRule)
+        self._cvar_gate_rule = self._find_rule("cvar-gate", CVaRGateRule)
+        self._drawdown_killswitch_rule = self._find_rule(
+            "drawdown-killswitch", DrawdownKillswitchRule
+        )
+        self._open_hedges: dict[str, str] = {}
+        self._pending_informational_notes: list[str] = []
+
+    def register_open_hedge(self, symbol: str, trigger: str) -> None:
+        """Explicitly track an open hedge on symbol for the given trigger."""
+        self._open_hedges[symbol] = trigger
+
+    @property
+    def open_hedges(self) -> dict[str, str]:
+        return dict(self._open_hedges)
+
+    def _find_rule(self, rule_id: str, rule_type: type) -> Any | None:
+        """An enabled rule instance of `rule_type` with id `rule_id` from
+        `policy_engine.rules`, or None if it's missing, disabled, or the
+        wrong type (a policy file could reuse this id for a different rule
+        type; `hedge_proposal.compute_proposal` needs the real thing, not
+        just any rule matching the id)."""
+        for rule in self.policy_engine.rules:
+            if rule.id == rule_id and rule.enabled and isinstance(rule, rule_type):
+                return rule
+        return None
+
+    def _check_hedge_normalization(self, state: dict[str, Any]) -> None:
+        if self._hedge_rule is None or not self._open_hedges:
+            return
+
+        normalized: list[tuple[str, str]] = []
+        for symbol, trigger in list(self._open_hedges.items()):
+            if hedge_proposal.is_trigger_normalized(
+                trigger,
+                symbol,
+                state,
+                hedge_cfg=self._hedge_rule.cfg,
+                cvar_gate_rule=self._cvar_gate_rule,
+                drawdown_killswitch_rule=self._drawdown_killswitch_rule,
+            ):
+                normalized.append((symbol, trigger))
+
+        for symbol, trigger in normalized:
+            del self._open_hedges[symbol]
+            note = hedge_proposal.format_hedge_release_note(symbol)
+            if self.policy_engine.audit_writer is not None:
+                self.policy_engine.audit_writer.append(
+                    tool_name="hedge_release:flagged",
+                    arguments={"symbol": symbol, "trigger": trigger},
+                    verdict="soft_block",
+                    reason=note,
+                    forwarded=False,
+                    upstream_status="not_forwarded",
+                    rule_id="hedge-proposal",
+                    regulation_ref=None,
+                )
+            self._pending_informational_notes.append(note)
+
+    def _propose_hedge_if_triggered(
+        self, tool_name: str, arguments: dict[str, Any], state: dict[str, Any]
+    ) -> None:
+        if self._hedge_rule is None:
+            return
+        proposal = hedge_proposal.compute_proposal(
+            tool_name,
+            arguments,
+            state,
+            hedge_cfg=self._hedge_rule.cfg,
+            cvar_gate_rule=self._cvar_gate_rule,
+            drawdown_killswitch_rule=self._drawdown_killswitch_rule,
+        )
+        if proposal is None:
+            return
+        self._open_hedges[proposal.symbol] = proposal.trigger
+        if self.policy_engine.audit_writer is not None:
+            self.policy_engine.audit_writer.append(
+                tool_name="hedge_proposal:detected",
+                arguments={"symbol": proposal.symbol, "trigger": proposal.trigger},
+                verdict="soft_block",
+                reason=proposal.reason,
+                forwarded=False,
+                upstream_status="not_forwarded",
+                rule_id="hedge-proposal",
+                regulation_ref=None,
+            )
+
+    def _record_order_event(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        now: float,
+        outcome: str,
+        order_id: str | None = None,
+    ) -> None:
+        """Append one order-lifecycle event to `self._order_history`.
+
+        `symbol`/`side`/`qty`/`limit_price` are read directly off the call's
+        own arguments using the same field names notional_cap/position_cap/
+        wash_trade_detector already default to. `order_id` prefers an
+        explicit value (parsed from a successful call's result, or the
+        `order_id` a cancel/replace call itself carries); failing that, a
+        synthetic placeholder is generated so this event is still distinct
+        and referenceable, even though nothing will ever look it up by that
+        id.
+        """
+        symbol = str(arguments.get("symbol") or "")
+        side = str(arguments.get("side") or "")
+        qty = _coerce_float(arguments.get("qty"))
+        price = _coerce_float(arguments.get("limit_price"))
+        resolved_order_id = (
+            order_id or arguments.get("order_id") or f"unknown-{uuid.uuid4()}"
+        )
+
+        self._order_history.record(
+            timestamp=now,
+            tool=tool_name,
+            symbol=symbol,
+            side=side,
+            qty=qty if qty is not None else 0.0,
+            price=price,
+            order_id=str(resolved_order_id),
+            outcome=outcome,
+        )
+
+    def _track_order_lifecycle(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        *,
+        now: float,
+        hard_blocked: bool,
+        result: Any | None = None,
+        upstream_errored: bool = False,
+    ) -> None:
+        """Feed `self._order_history` from one call's outcome, categorizing
+        `tool_name` into place/cancel/replace (or neither, in which case
+        this is a no-op) the same way unrecognized_tool_catchall
+        categorizes tool names -- via `matches_any` against the real Alpaca
+        tool names, not a fresh mechanism.
+
+        Design decision -- explicit, per the task that introduced this
+        method, since either choice was defensible: **hard-blocked
+        place_*/replace_order_by_id attempts ARE recorded** (outcome=
+        "blocked"), not excluded. Reasoning:
+
+          - order_rate_throttle counts *any* history entry matching its
+            `place_tool_match`, regardless of outcome (see
+            order_rate_throttle.py's `check()`) -- SEC Rule
+            15c3-5(c)(1)(ii) throttles the rate of automated order
+            *submission*, and an agent hammering place_stock_order and
+            getting hard-blocked every time is still submitting at that
+            rate. Excluding blocked attempts would let exactly that
+            retry-spam pattern dodge the throttle by construction --
+            defeating the reactivation this method exists to provide.
+          - wash_trade_detector only matches `outcome == "filled"` and
+            place_cancel_ratio's numerator only matches
+            `outcome == "cancelled"`; "blocked" never equals either, so a
+            blocked attempt cannot manufacture a false wash-trade or
+            cancel-ratio signal. place_cancel_ratio's *denominator* (its
+            "placed" list, matched by tool name only) does grow by one per
+            blocked attempt, mildly diluting the ratio under adversarial
+            noise -- accepted as a minor, documented trade-off against the
+            throttle benefit above.
+          - layering_detector's wall-evidence filter is
+            `outcome != "filled"`, so a blocked attempt does count as wall
+            evidence. layering_detector is `severity: soft` (flags for
+            review, never blocks), so the cost of this over-counting is
+            low, and consistent with this codebase's own stated bias
+            elsewhere (pct_of_adv.py: "over-blocking on incomplete data is
+            the correct failure direction; under-blocking would not be").
+
+        A genuine transport-level exception (the `except Exception:` branch
+        in `on_call_tool`) is deliberately **not** recorded here at all,
+        from either call site: whether the order actually reached the
+        exchange is unknown in that case, and guessing either way (as
+        "open" or as "blocked") would be a fabricated record -- the same
+        reasoning that makes `firewall.audit` surface an unresolved
+        *pending* record instead of inventing an outcome for it.
+
+        `cancel_order_by_id` is handled differently from place/replace: a
+        successful cancel updates the *existing* place-event's outcome in
+        place (`OrderHistory.update_outcome`) rather than adding a new
+        entry, because place_cancel_ratio's "placed" list is built from
+        `place_tool_match` -- a fresh entry tagged `cancel_order_by_id`
+        would never be counted as a "placed" order to begin with, and the
+        rule's ratio logic depends on the *same* entry's outcome moving
+        from "open" to "cancelled". A hard-blocked or upstream-errored
+        cancel attempt updates nothing (no cancellation happened) and is
+        not recorded as its own event: unlike place/replace, no rule reads
+        `order_history` for cancel-attempt evidence directly, so there is
+        nothing here for a new entry to feed.
+        """
+        is_place = matches_any(tool_name, _PLACE_ORDER_TOOLS)
+        is_cancel = matches_any(tool_name, _CANCEL_ORDER_TOOLS)
+        is_replace = matches_any(tool_name, _REPLACE_ORDER_TOOLS)
+        if not (is_place or is_cancel or is_replace):
+            return
+
+        if hard_blocked:
+            if is_cancel:
+                return
+            self._record_order_event(tool_name, arguments, now=now, outcome="blocked")
+            return
+
+        if is_cancel:
+            if not upstream_errored:
+                order_id = arguments.get("order_id")
+                if isinstance(order_id, str) and order_id:
+                    self._order_history.update_outcome(order_id, "cancelled")
+            return
+
+        # place_* / replace_order_by_id, forwarded upstream.
+        if upstream_errored:
+            self._record_order_event(tool_name, arguments, now=now, outcome="rejected")
+            return
+
+        order_id, outcome = _parse_order_result(result)
+        self._record_order_event(
+            tool_name, arguments, now=now, outcome=outcome, order_id=order_id
+        )
+
+    def _populate_session_pnl(self, state: dict[str, Any]) -> None:
+        """Fetch today's session P&L from Alpaca and set
+        `state["session_pnl_usd"]` (drawdown_killswitch's input) if it
+        succeeds.
+
+        On failure, `session_pnl_usd` is left absent -- drawdown_killswitch
+        already treats a missing value as "can't assess" and does not trip
+        (a separate, pre-existing defect tracked in AUDIT.md's E3 finding,
+        not addressed here). What *is* addressed here: the failure itself
+        is written to the audit log as a soft_block, so "no PnL data was
+        available for this call" is a visible, queryable event rather than
+        an invisible skip -- an operator (or a later rule) can tell that
+        apart from "PnL data said we're fine."
+        """
+        result = self._account_pnl_fetcher()
+        if result.ok:
+            state["session_pnl_usd"] = result.session_pnl_usd
+            return
+
+        if self.policy_engine.audit_writer is not None:
+            self.policy_engine.audit_writer.append(
+                tool_name="session_pnl:fetch_failed",
+                arguments={},
+                verdict="soft_block",
+                reason=(
+                    f"could not fetch session_pnl_usd from Alpaca: {result.reason} "
+                    "-- drawdown_killswitch cannot assess this call and will not trip"
+                ),
+                forwarded=False,
+                upstream_status="not_forwarded",
+                rule_id="account_pnl_fetch",
+                regulation_ref=None,
+            )
 
     async def on_call_tool(
         self,
@@ -90,10 +514,27 @@ class FirewallMiddleware(Middleware):
             "order_history": self._order_history,
             "pnl_history": self._pnl_history,
         }
+        if matches_any(tool_name, _SESSION_PNL_RELEVANT_TOOLS):
+            self._populate_session_pnl(state)
+        self._check_hedge_normalization(state)
         verdict = self.policy_engine.evaluate(tool_name, arguments, state)
+        self._propose_hedge_if_triggered(tool_name, arguments, state)
 
         if verdict.decision == "hard_block":
+            self._track_order_lifecycle(
+                tool_name, arguments, now=state["now"], hard_blocked=True
+            )
             raise ToolError(f"BLOCKED by rule {verdict.rule_id!r}: {verdict.reason}")
+
+        # Written before the forwarding attempt so a process death between
+        # here and the outcome write below (crash, OOM, power loss -- not
+        # something the except Exception: block below can catch, since the
+        # process wouldn't be alive to run it) still leaves a durable
+        # record that this call was attempted. See
+        # PolicyEngine.record_call_pending and firewall.audit's
+        # find_unresolved_pending for how an orphaned pending record is
+        # surfaced.
+        pending = self.policy_engine.record_call_pending(tool_name, arguments, verdict)
 
         # A tool that raises inside its own handler surfaces here as a normal
         # (non-raising) ToolResult with is_error=True -- that's standard MCP
@@ -105,15 +546,78 @@ class FirewallMiddleware(Middleware):
             result = await call_next(context)
         except Exception:
             self.policy_engine.record_call_outcome(
-                tool_name, arguments, verdict, forwarded=True, upstream_status="error"
+                tool_name,
+                arguments,
+                verdict,
+                forwarded=True,
+                upstream_status="error",
+                pending=pending,
             )
             raise
 
         upstream_status = "error" if getattr(result, "is_error", False) else "ok"
         self.policy_engine.record_call_outcome(
-            tool_name, arguments, verdict, forwarded=True, upstream_status=upstream_status
+            tool_name,
+            arguments,
+            verdict,
+            forwarded=True,
+            upstream_status=upstream_status,
+            pending=pending,
         )
+        self._track_order_lifecycle(
+            tool_name,
+            arguments,
+            now=state["now"],
+            hard_blocked=False,
+            result=result,
+            upstream_errored=(upstream_status == "error"),
+        )
+        if self._pending_informational_notes:
+            content = getattr(result, "content", None)
+            if isinstance(content, list):
+                for note in self._pending_informational_notes:
+                    content.append(TextContent(type="text", text=note))
+                self._pending_informational_notes.clear()
         return result
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[ReadResourceRequestParams],
+        call_next: CallNext[ReadResourceRequestParams, Any],
+    ) -> Any:
+        uri = str(getattr(context.message, "uri", ""))
+        if self.policy_engine.audit_writer is not None:
+            self.policy_engine.audit_writer.append(
+                tool_name="read_resource",
+                arguments={"uri": uri},
+                verdict="hard_block",
+                reason=f"resource access blocked — resources are not supported by trade firewall (uri={uri!r})",
+                forwarded=False,
+                upstream_status="not_forwarded",
+                rule_id="unsupported_endpoint_guard",
+                regulation_ref=None,
+            )
+        raise ResourceError(f"BLOCKED: resource access {uri!r} is disabled by trade firewall policy")
+
+    async def on_get_prompt(
+        self,
+        context: MiddlewareContext[GetPromptRequestParams],
+        call_next: CallNext[GetPromptRequestParams, Any],
+    ) -> Any:
+        prompt_name = str(getattr(context.message, "name", ""))
+        arguments = getattr(context.message, "arguments", None) or {}
+        if self.policy_engine.audit_writer is not None:
+            self.policy_engine.audit_writer.append(
+                tool_name="get_prompt",
+                arguments={"name": prompt_name, "arguments": arguments},
+                verdict="hard_block",
+                reason=f"prompt access blocked — prompts are not supported by trade firewall (prompt={prompt_name!r})",
+                forwarded=False,
+                upstream_status="not_forwarded",
+                rule_id="unsupported_endpoint_guard",
+                regulation_ref=None,
+            )
+        raise PromptError(f"BLOCKED: prompt access {prompt_name!r} is disabled by trade firewall policy")
 
 
 class PaperTradeGuardError(RuntimeError):
@@ -220,7 +724,10 @@ def _alpaca_client(policy_engine: PolicyEngine) -> Client:
 
 
 def build_proxy(
-    backend: Any | None = None, policy_engine: PolicyEngine | None = None
+    backend: Any | None = None,
+    policy_engine: PolicyEngine | None = None,
+    *,
+    account_pnl_fetcher: AccountPnLFetcher | None = None,
 ) -> FastMCP:
     """Build the firewall proxy wired to `backend`.
 
@@ -233,11 +740,24 @@ def build_proxy(
     `FIREWALL_AUDIT_LOG_PATH` (or `audit.jsonl` at the repo root) -- tests
     pass an explicit engine instead so they never write to those real
     paths.
+
+    `account_pnl_fetcher` defaults to `account_data.fetch_session_pnl`,
+    called with a timeout/cache-TTL read from `FIREWALL_SESSION_PNL_
+    TIMEOUT_SECONDS`/`FIREWALL_SESSION_PNL_CACHE_TTL_SECONDS` (or
+    `account_data`'s own defaults) -- tests pass a fake fetcher instead so
+    they never make a real network call and never need those env vars.
     """
     engine = policy_engine if policy_engine is not None else _default_policy_engine()
     target = backend if backend is not None else _alpaca_client(engine)
     proxy = create_proxy(target, name="mcp-trade-firewall")
-    proxy.add_middleware(FirewallMiddleware(engine))
+    proxy.add_middleware(
+        FirewallMiddleware(
+            engine,
+            account_pnl_fetcher=account_pnl_fetcher,
+            session_pnl_timeout_seconds=_session_pnl_timeout_seconds(),
+            session_pnl_cache_ttl_seconds=_session_pnl_cache_ttl_seconds(),
+        )
+    )
     return proxy
 
 

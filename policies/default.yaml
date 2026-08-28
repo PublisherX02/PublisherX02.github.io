@@ -9,11 +9,79 @@
 # severity/regulation_ref are type-specific params -- see the corresponding
 # module in src/firewall/rules/ for what each one means.
 
-version: "0.4.0" # 0.4.0: added cooldown_after_loss (new hard rule)
+version: "0.9.0" # 0.4.0: added cooldown_after_loss (new hard rule)
+                  # 0.5.0: added unrecognized_tool_catchall (new hard rule,
+                  # must stay last -- default-deny for any tool call not on
+                  # the read-only whitelist and not matched by any rule
+                  # above; closes conformance-audit finding A2)
+                  # (hedge_proposal, 2026-08-23, was NOT given a version
+                  # entry here: its check() is always a no-op, RuleOutcome
+                  # (False) -- it never changes what this policy blocks or
+                  # allows, only what gets reported to the audit log
+                  # separately -- so it doesn't change the hard-block
+                  # surface this version string is tracking. Not an
+                  # omission.)
+                  # 0.6.0: added option_expiry_floor (new hard rule, pin
+                  # risk/theta-decay restriction near option expiration)
+                  # 0.7.0: added option_spread_guard (new hard rule, blocks
+                  # MARKET option orders on a wide relative bid/ask spread;
+                  # SEC Rule 15c3-5(c)(1)(ii))
+                  # 0.8.0: added option_sell_guard (new hard rule, hard
+                  # blocks all option-sell orders as a stated scope
+                  # limitation -- see that rule's own module docstring),
+                  # net_delta_floor (new hard rule -- registers, for the
+                  # first time, code that already existed but was dormant:
+                  # see AUDIT.md's own section on this remediation and
+                  # README's now-updated "What this does not do"), and
+                  # hedge_cost_cap (new hard rule, caps option-buy premium
+                  # cost to a fraction of account equity)
+                  # 0.9.0: added hedge_regime_call_guard (new hard rule,
+                  # hard blocks a call BUY while a CVaR/drawdown
+                  # hedge-trigger regime is active -- catches a failure
+                  # mode net_delta_floor's lower-bound checks structurally
+                  # cannot: a call adds positive delta, never triggering a
+                  # "too short" floor. Reuses hedge_proposal.compute_
+                  # proposal()'s own trigger detection verbatim; see that
+                  # rule's own module docstring and AUDIT.md)
+                  #
+                  # STALE ARTIFACT WARNING, pre-existing, not introduced by
+                  # this bump: evals/out/results.json's own
+                  # "default_policy_version" field already read "0.4.0"
+                  # before this session touched anything -- three versions
+                  # behind disk even at 0.5.0. This bump widens that gap to
+                  # seven. No corpus payload exercises place_option_order
+                  # (confirmed by grep -- see AUDIT.md sections H2/H3), so
+                  # the published ASR/FPR numbers themselves are unaffected
+                  # by any of 0.5.0->0.9.0 specifically, but the version
+                  # string results.json/results.md display next to those
+                  # numbers is misleading regardless. Regenerating that
+                  # file is a separate decision (see AUDIT.md's G1 finding
+                  # on this harness's own pre-registration/reproducibility
+                  # story before doing so) -- not done as a side effect
+                  # here.
 
 rules:
   # SEC Rule 15c3-5(c)(1)(i): pre-trade controls must cap the value of a
-  # single order.
+  # single order. sizing_tool_match: fails closed (hard_block, not skip)
+  # when notional can't be computed for replace_order_by_id specifically --
+  # e.g. bumping qty without re-specifying limit_price, an Alpaca-legal
+  # partial amendment that leaves the existing resting price (invisible to
+  # this firewall) untouched. Deliberately NOT the three place_* tools: a
+  # plain market order legitimately carries qty and no price at all
+  # (verified against alpaca-mcp-server's real place_stock_order schema --
+  # `type` defaults to "market", limit_price is required only for limit/
+  # stop_limit orders), so a None notional there is normal, not incomplete
+  # data -- see src/firewall/rules/notional_cap.py's module docstring.
+  # Every other "order"-matching tool (get_orders, cancel_order_by_id, ...)
+  # legitimately never carries qty/price either and must still be allowed
+  # through -- see conformance-audit finding A4.
+  # option_contract_multiplier (default 100, applied to place_option_order
+  # only): one option contract = 100 shares, so qty * limit_price
+  # undercounts real premium by 100x without it -- the only rule of the
+  # four sizing/risk rules that still reaches a multi-leg options order at
+  # all, since position_cap/cvar_gate/pct_of_adv all require a parent
+  # `symbol` that multi-leg calls don't carry. See notional_cap.py's
+  # module docstring and AUDIT.md's "New feature" section.
   - id: notional-cap-single-order
     type: notional_cap
     enabled: true
@@ -21,10 +89,13 @@ rules:
     regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
     max_usd: 5000
     tool_match: ["order"]
+    sizing_tool_match: ["replace_order_by_id"]
 
   # SEC Rule 15c3-5(c)(1)(i): pre-trade controls must cap maximum position
   # size per instrument, checked against currently-held exposure plus this
-  # order.
+  # order. sizing_tool_match: same fail-closed-on-incomplete-data rationale
+  # as notional-cap-single-order above (replace_order_by_id only, not the
+  # place_* tools).
   - id: position-cap-per-symbol
     type: position_cap
     enabled: true
@@ -32,10 +103,256 @@ rules:
     regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
     max_usd_per_symbol: 20000
     tool_match: ["order"]
+    sizing_tool_match: ["replace_order_by_id"]
+
+  # STATED SCOPE LIMITATION, not a silent gap (see
+  # src/firewall/rules/option_sell_guard.py's module docstring): hard blocks
+  # ALL option-sell orders (single-leg side=="sell", or any leg of a
+  # multi-leg order not verified as a buy) until dedicated collateral/
+  # assignment-risk controls exist. Every other option-specific check added
+  # alongside this one (option-expiry-floor, option-spread-guard,
+  # net-delta-floor, hedge-cost-cap) assumes premium is being SPENT, not
+  # received -- none of them, nor notional-cap/position-cap, model the
+  # uncapped assignment risk of a short option. Consequence, stated
+  # plainly: covered calls, cash-secured puts, and collars (sell + buy legs
+  # together) are out of scope for this firewall today, not an oversight.
+  # UNMAPPED: this is a scope decision, not itself tied to a specific
+  # verified citation; regulation_ref stays null.
+  #
+  # PLACED FIRST among the option-specific checks, ahead of even
+  # option-expiry-floor: a sell order is categorically out of scope
+  # regardless of its expiry/spread/delta/cost, so this is both the
+  # cheapest check (pure payload, no market-data call) and the most
+  # fundamental disqualifier -- an agent submitting a near-dated sell order
+  # needs to hear "sell orders aren't supported," not "pick a later
+  # expiry," which would misleadingly imply resubmitting with a different
+  # expiry would succeed.
+  - id: option-sell-guard
+    type: option_sell_guard
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    tool_match: ["place_option_order"]
+
+  # UNMAPPED: this is a structural/instrument-type restriction (which
+  # option TYPE is permitted while a regime is active), not a sizing-
+  # parameter check -- see src/firewall/rules/hedge_regime_call_guard.py's
+  # own "NOT REDUNDANT WITH net_delta_floor" section, which argues at
+  # length that this catches something a size/delta-magnitude check
+  # structurally cannot. Citing SEC Rule 15c3-5(c)(1)(ii) (the "exceeds
+  # appropriate size parameters" clause net-delta-floor/hedge-cost-cap
+  # cite) would contradict that framing; same UNMAPPED treatment as
+  # option-sell-guard, the nearest analogue (also a permitted-instrument
+  # scope decision, not a sizing check) -- regulation_ref stays null until
+  # a citation is verified. Parses the option type from the OCC
+  # symbol (free, no market-data call) -- a PUT is always the authorized
+  # structure and is never touched by this rule.
+  #
+  # REUSES hedge_proposal.compute_proposal()'s OWN trigger detection
+  # verbatim, via three state keys mirroring iv_hv_ratio's own
+  # `cvar_gate_rule` precedent (`hedge_proposal_rule`, `cvar_gate_rule`,
+  # `drawdown_killswitch_rule`) -- none of which anything in `src/`
+  # populates yet (same disclosed, not-yet-built proxy-wiring gap). This
+  # is a best-effort reuse of a detection feature, NOT a fail-closed
+  # market-data check: missing state means "can't determine," which does
+  # NOT block, unlike net-delta-floor/option-spread-guard/hedge-cost-cap's
+  # own missing-market-data convention. Correct by construction,
+  # unit-tested directly, but fully dormant until that wiring exists --
+  # see README's "What this does not do" for which of its two trigger
+  # paths (cvar/drawdown) would even be reachable once it is.
+  #
+  # PLACED SECOND among the option-specific checks, right after
+  # option-sell-guard: a free payload/state check, same reasoning as that
+  # rule's own placement ahead of the market-data-dependent checks below.
+  - id: hedge-regime-call-guard
+    type: hedge_regime_call_guard
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    tool_match: ["place_option_order"]
+
+  # UNMAPPED: no verified US federal/FINRA citation specific to an
+  # expiration-floor restriction; regulation_ref stays null until one is
+  # verified. Blocks any option order (single-leg symbol, or any leg of a
+  # multi-leg order) whose contract expires within days_to_expiry_floor
+  # calendar days -- pin risk and accelerated theta decay near expiration.
+  # Parses the expiry directly from the order's own OCC-format symbol
+  # already present in the call (no market-data API call) -- see
+  # src/firewall/rules/option_expiry_floor.py's module docstring for the
+  # calendar-days-not-trading-days rationale and the multi-leg
+  # any-leg-triggers semantics.
+  #
+  # PLACED AHEAD OF symbol-allowlist DELIBERATELY, not incidentally:
+  # every single-leg place_option_order's `symbol` is OCC-format (verified
+  # against the live inputSchema), which never matches symbol-allowlist's
+  # plain-ticker entries -- so symbol-allowlist hard-blocks EVERY
+  # single-leg option order today, on an allowlisted underlying or not
+  # (see AUDIT.md section H2). If this rule sat after symbol-allowlist,
+  # PolicyEngine.evaluate's short-circuit-on-first-hard-block (policy.py)
+  # would mean it could never fire for a single-leg call at all --
+  # verified live before choosing this placement, not assumed: evaluating
+  # a near-dated single-leg order against a symbol-allowlist-then-this
+  # ordering returned symbol-allowlist's generic rejection, never this
+  # rule's. Same reasoning already used for gtc-restriction below (an
+  # agent needs the specific, actionable reason -- "pick a later expiry"
+  # here, "resubmit as day/ioc" there -- not a generic one from whichever
+  # rule happens to run first). A pure payload check with no data
+  # dependency, like gtc-restriction.
+  #
+  # SCOPE OF THIS PLACEMENT CHOICE, single-leg only: this reordering does
+  # NOT affect multi-leg reachability either way -- symbol-allowlist
+  # already PASSES a multi-leg order on allowlisted underlyings (it checks
+  # each leg's parsed underlying, not an exact OCC-string match), and
+  # nothing else blocks that shape either, so this rule was reachable for
+  # multi-leg calls regardless of which side of symbol-allowlist it sat
+  # on. Re-verified directly (built the engine with this rule in its
+  # original post-gtc-restriction position and re-ran a multi-leg call):
+  # still reached option-expiry-floor. Don't read this placement as "the
+  # fix that made the rule work" -- for multi-leg it changes nothing; for
+  # single-leg it only changes which reason gets reported, never the
+  # allow/block decision itself (single-leg options are unconditionally
+  # blocked by symbol-allowlist either way -- see AUDIT.md section H3).
+  - id: option-expiry-floor
+    type: option_expiry_floor
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    days_to_expiry_floor: 7
+    tool_match: ["order"]
+
+  # SEC Rule 15c3-5(c)(1)(ii): pre-trade controls must prevent entry of
+  # erroneous orders "by rejecting orders that exceed appropriate price or
+  # size parameters" -- same subsection order-rate-throttle cites below for
+  # its own, different clause ("duplicative orders... over a short period
+  # of time"). Relative spread ((ask - bid) / ask) is a live price-quality
+  # parameter; a MARKET order (only -- a limit order already states its
+  # own price protection via limit_price, see
+  # src/firewall/rules/option_spread_guard.py's module docstring) against
+  # a spread this wide has no bound on its fill price. Single-leg option
+  # orders only: self-scopes via a valid OCC-format `symbol` (same pattern
+  # symbol_allowlist/option_expiry_floor use), so stock/crypto market
+  # orders and multi-leg option orders (no parent `symbol`) are untouched
+  # -- multi-leg is a disclosed, deliberate gap, not silently extended
+  # (see the module docstring for why: N legs would mean N market-data
+  # round trips plus an undecided "which leg's spread governs" question).
+  # Missing/bad quote data fails CLOSED, matching cvar-gate/pct-of-adv's
+  # own convention for a market-data-dependent hard rule -- "can't verify
+  # the spread" and "spread is unacceptably wide" carry the same practical
+  # risk for a market order. feed: "indicative", not the schema's own
+  # default "opra" -- this project's free/Basic plan has no OPRA
+  # subscription (same constraint pct-of-adv already documents for
+  # stocks/IEX); verified against the real OpenAPI spec, not assumed --
+  # see firewall/market_data.py's DEFAULT_OPTION_FEED comment.
+  #
+  # PLACED AHEAD OF symbol-allowlist, same reason and same scope of claim
+  # as option-expiry-floor above (see that rule's own placement comment,
+  # and AUDIT.md section H2/H3): symbol-allowlist hard-blocks every
+  # single-leg option order unconditionally today (OCC symbol never
+  # matches a plain-ticker entry), so this rule would never execute at all
+  # if placed after it -- verified live before choosing this placement.
+  # This reorder does NOT change the allow/block outcome for single-leg
+  # orders (already blocked either way); it changes which rule reports,
+  # so a wide-spread market order gets its own actionable reason instead
+  # of a generic allowlist rejection. Cost of this placement, stated
+  # plainly: a single-leg option MARKET order now incurs a live quote
+  # fetch before symbol-allowlist could otherwise have rejected it for
+  # free on a disallowed underlying. Bounded in practice -- the fetch only
+  # runs on the market-order/single-leg-option slice to begin with (see
+  # this rule's own tool_match/type/symbol gating), and the 5-second quote
+  # cache absorbs repeated calls on the same contract. Placed AFTER
+  # option-expiry-floor, not before it: an already-expired contract's
+  # order is rejected by a free string parse, never paying for a quote
+  # fetch first.
+  - id: option-spread-guard
+    type: option_spread_guard
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(ii)"
+    max_relative_spread: 0.15 # 15%
+    tool_match: ["order"]
+    market_data_timeout_seconds: 5.0
+    quote_cache_ttl_seconds: 5.0 # much shorter than bars' 1800s -- see
+                                 # market_data.py's own comment on why a
+                                 # live spread can't reuse that TTL
+    feed: "indicative"
+
+  # SEC Rule 15c3-5(c)(1)(ii): erroneous orders "that exceed appropriate...
+  # size parameters" -- an option order sized past neutral is a mis-sized
+  # (erroneous) hedge, its true directional exposure not matching what a
+  # hedge is supposed to produce. TWO INDEPENDENT CHECKS in one rule, see
+  # src/firewall/rules/net_delta_floor.py's module docstring: (1)
+  # structural_delta_floor -- the raw per-contract delta must clear a flat
+  # minimum, or the contract is too far out-of-the-money to function as a
+  # hedge at all; (2) net_delta_floor -- the AGGREGATE portfolio delta
+  # (existing shares + this order's x100-scaled delta contribution) must
+  # not drop below a floor, or the order is a directional bet, not a hedge.
+  # Uses the same options-snapshot fetch option-spread-guard already reads
+  # (one HTTP call, one 5s cache entry serves both). Single-leg only, same
+  # scope boundary as option-spread-guard.
+  #
+  # REGARDLESS OF CALL ORIGIN: this and hedge-cost-cap below are registered
+  # RULE_TYPES entries evaluated for EVERY place_option_order call here, not
+  # validation embedded only inside hedge_proposal.py's own proposal step
+  # (which performs no validation of its own at all) -- an option order
+  # that didn't originate from a hedge trigger is checked identically.
+  #
+  # PLACED AHEAD OF symbol-allowlist, same reason and same scope of claim as
+  # option-expiry-floor/option-spread-guard above: symbol-allowlist
+  # hard-blocks every single-leg option order unconditionally today (OCC
+  # symbol never matches a plain-ticker entry), so this reorder does NOT
+  # change the allow/block OUTCOME for single-leg orders (already blocked
+  # either way) -- only which rule reports, giving an agent the specific,
+  # actionable delta reason instead of a generic allowlist rejection.
+  - id: net-delta-floor
+    type: net_delta_floor
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(c)(1)(ii)"
+    net_delta_floor: 0.0
+    structural_delta_floor: 0.15
+    tool_match: ["order"]
+    market_data_timeout_seconds: 5.0
+    quote_cache_ttl_seconds: 5.0
+    feed: "indicative"
+
+  # UNMAPPED: a cost-proportionate-to-equity cap on option premium is a
+  # scope/sizing decision, not itself tied to a specific verified citation
+  # (same framing as cvar-gate/pct-of-adv above); regulation_ref stays
+  # null. Hard blocks a single-leg option BUY order whose total premium
+  # cost (live ask x 100 x qty, from the same snapshot fetch net-delta-floor/
+  # option-spread-guard already use) exceeds max_pct_of_equity of current
+  # account equity -- reusing cvar-gate's own account_equity_state_key, not
+  # a second, differently-named input. See
+  # src/firewall/rules/hedge_cost_cap.py's module docstring for the
+  # explicit decision on what extract_notional() computes for options
+  # (total premium, not underlying notional, not an unmultiplied qty x
+  # price) and why this rule agrees with notional-cap on that quantity
+  # while reading the live ask instead of the order's own limit_price.
+  # Same "regardless of call origin" and "ahead of symbol-allowlist"
+  # reasoning as net-delta-floor immediately above. Missing/non-numeric
+  # account_equity fails closed, exactly like cvar-gate (same disclosed,
+  # pre-existing gap: nothing in src/ populates state["account_equity"]
+  # from a real upstream response yet).
+  - id: hedge-cost-cap
+    type: hedge_cost_cap
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    max_pct_of_equity: 0.02 # 2% of current account equity, per hedge order
+    tool_match: ["order"]
+    market_data_timeout_seconds: 5.0
+    quote_cache_ttl_seconds: 5.0
+    feed: "indicative"
 
   # SEC Rule 15c3-5(c)(2)(ii): algorithmic trading must be restricted to a
   # defined, reviewed set of instruments rather than trading anything on
-  # request.
+  # request. Multi-leg place_option_order calls carry no parent `symbol`
+  # (verified against the live inputSchema) -- checked per-leg instead, via
+  # each leg's OCC symbol's underlying (src/firewall/rules/_util.py's
+  # parse_occ_underlying). Single-leg option orders are unaffected: their
+  # `symbol` is also OCC-format and never matches a plain ticker here, so
+  # they're already hard-blocked -- see symbol_allowlist.py's module
+  # docstring.
   - id: symbol-allowlist
     type: symbol_allowlist
     enabled: true
@@ -199,3 +516,121 @@ rules:
     market_data_timeout_seconds: 5.0 # was a Python-only default (conformance-audit
                                       # finding D5) -- same value, now YAML-driven
     bars_cache_ttl_seconds: 1800.0 # 30 minutes; same value, now YAML-driven
+
+  # Advisory only, not a compliance control -- regulation_ref stays null.
+  # severity: soft is nominal here: this rule's own check() always returns
+  # RuleOutcome(False) (never blocks or warns through the normal
+  # PolicyEngine pipeline) -- see firewall/rules/hedge_proposal.py's module
+  # docstring for why, and for how its real output (a detection + audit
+  # record only, nothing ever submitted) reaches the audit log instead.
+  # Reuses cvar-gate's and drawdown-killswitch's own already-computed
+  # numbers, not a second risk calculation. Deliberately omitted from all
+  # 5 preset_*.yaml files (documented, not a repeat of D5's silent-preset-
+  # omission finding): this is a detection/reporting feature, not a
+  # blocking control, so it doesn't belong in the strictness-gradient sweep
+  # those presets exist for.
+  - id: hedge-proposal
+    type: hedge_proposal
+    enabled: true
+    severity: soft
+    regulation_ref: null
+    cvar_trigger_pct_of_max_loss: 0.8
+    drawdown_trigger_pct_of_threshold: 0.8
+    otm_pct: 0.05
+    expiry_min_days: 14
+    expiry_max_days: 45
+    coverage_pct: 0.5
+
+  # SEC Rule 15c3-5(b); SEC Rule 15c3-5(c)(2)(ii): same "restricted to a
+  # defined, reviewed set" logic as symbol-allowlist above, applied to
+  # *actions* (tool names) instead of instruments (symbols) -- pre-trade
+  # risk controls must not default to permitting anything not explicitly
+  # reviewed. MUST STAY LAST: PolicyEngine.evaluate short-circuits on the
+  # first triggered hard rule, so every rule above this one gets first
+  # look; this one only ever sees a call none of them claimed via their own
+  # tool_match, at which point it's either read-only-and-inert
+  # (read_only_whitelist, exact match) or unrecognized (hard block).
+  #
+  # Conformance-audit finding A2: a fabricated tool name carrying a
+  # $999,999,999 argument was previously forwarded upstream with "no rule
+  # triggered", because every rule above only *substantively* evaluates a
+  # call whose name matches its own tool_match -- a name matching nothing
+  # was indistinguishable from a name matching something and passing.
+  #
+  # read_only_whitelist is the full, exact enumeration of every get_*/
+  # list_*/search_*/fetch_* tool alpaca-mcp-server (main, checked
+  # 2026-08-18) exposes -- see AUDIT.md section A1. A newly-added upstream
+  # read-only tool is NOT auto-whitelisted by prefix; it must be added here
+  # explicitly after review, same as any other rule change.
+  #
+  # covered_patterns duplicates the tool_match/place_tool_match substrings
+  # already used by the hard rules above (kept here, not introspected at
+  # runtime -- see the module docstring in
+  # src/firewall/rules/unrecognized_tool_catchall.py). Update this list if
+  # any rule above changes its pattern or a new pattern-matched rule is
+  # added, or this catch-all will start hard-blocking calls another rule
+  # already owns.
+  - id: unrecognized-tool-catchall
+    type: unrecognized_tool_catchall
+    enabled: true
+    severity: hard
+    regulation_ref: "SEC Rule 15c3-5(b); SEC Rule 15c3-5(c)(2)(ii)"
+    covered_patterns: ["order", "cancel_all", "close_all", "liquidate"]
+    read_only_whitelist:
+      - fetch_alpaca_doc
+      - get_account_activities
+      - get_account_activities_by_type
+      - get_account_config
+      - get_account_info
+      - get_all_assets
+      - get_all_positions
+      - get_alpaca_endpoint_docs
+      - get_asset
+      - get_calendar
+      - get_clock
+      - get_corporate_action_announcement
+      - get_corporate_action_announcements
+      - get_corporate_actions
+      - get_crypto_bars
+      - get_crypto_latest_bar
+      - get_crypto_latest_orderbook
+      - get_crypto_latest_quote
+      - get_crypto_latest_trade
+      - get_crypto_quotes
+      - get_crypto_snapshot
+      - get_crypto_trades
+      - get_fixed_income_latest_quotes
+      - get_index_latest_values
+      - get_index_values
+      - get_locate
+      - get_locate_quotes
+      - get_locates
+      - get_market_movers
+      - get_most_active_stocks
+      - get_news
+      - get_open_position
+      - get_option_bars
+      - get_option_chain
+      - get_option_contract
+      - get_option_contracts
+      - get_option_exchange_codes
+      - get_option_latest_quote
+      - get_option_latest_trade
+      - get_option_snapshot
+      - get_option_trades
+      - get_order_by_client_id
+      - get_order_by_id
+      - get_orders
+      - get_portfolio_history
+      - get_stock_bars
+      - get_stock_latest_bar
+      - get_stock_latest_quote
+      - get_stock_latest_trade
+      - get_stock_quotes
+      - get_stock_snapshot
+      - get_stock_trades
+      - get_watchlist_by_id
+      - get_watchlists
+      - list_alpaca_api_endpoints
+      - search_alpaca_api_specs
+      - search_alpaca_docs

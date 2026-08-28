@@ -66,18 +66,128 @@ class LeakAction:
 Action = CallAction | LeakAction
 
 
+# Fields that Alpaca's real MCP schema types as JSON strings rather than numbers
+# (see AUDIT.md finding A4 / Fix 1).
+_STRING_NUMERIC_FIELDS = frozenset({"qty", "limit_price", "notional", "stop_price", "ratio_qty"})
+
+
+def _is_option_tool(name: str) -> bool:
+    """True if tool name indicates an option order placement."""
+    return "option" in name.lower()
+
+
+def build_stock_order_payload(
+    symbol: str = "AAPL",
+    side: str = "buy",
+    qty: str | int | float = "10",
+    limit_price: str | int | float | None = "100.00",
+    type: str = "limit",
+    time_in_force: str = "day",
+    order_id: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Construct a place_stock_order payload matching Alpaca's real schema
+    with string-typed numeric fields."""
+    payload: dict[str, Any] = {
+        "symbol": symbol,
+        "side": side,
+        "qty": str(qty) if qty is not None else "10",
+        "type": type,
+        "time_in_force": time_in_force,
+    }
+    if limit_price is not None:
+        payload["limit_price"] = str(limit_price)
+    if order_id is not None:
+        payload["order_id"] = order_id
+    for k, v in extra.items():
+        if k in _STRING_NUMERIC_FIELDS and isinstance(v, (int, float)):
+            payload[k] = str(v)
+        else:
+            payload[k] = v
+    return payload
+
+
+def build_option_order_payload(
+    symbol: str = "AAPL260918P00220000",
+    side: str = "buy",
+    qty: str | int | float = "1",
+    limit_price: str | int | float | None = "5.00",
+    type: str = "limit",
+    time_in_force: str = "day",
+    order_class: str | None = None,
+    legs: list[dict[str, Any]] | None = None,
+    order_id: str | None = None,
+    **extra: Any,
+) -> dict[str, Any]:
+    """Construct a place_option_order payload matching Alpaca's real schema
+    with string-typed numeric fields (single-leg or multi-leg)."""
+    payload: dict[str, Any] = {
+        "side": side,
+        "qty": str(qty) if qty is not None else "1",
+        "type": type,
+        "time_in_force": time_in_force,
+    }
+    if legs is not None or order_class == "mleg":
+        payload["order_class"] = "mleg"
+        formatted_legs: list[dict[str, Any]] = []
+        for leg in legs or []:
+            formatted_leg = dict(leg)
+            if "ratio_qty" in formatted_leg and isinstance(formatted_leg["ratio_qty"], (int, float)):
+                formatted_leg["ratio_qty"] = str(formatted_leg["ratio_qty"])
+            formatted_legs.append(formatted_leg)
+        payload["legs"] = formatted_legs
+    else:
+        payload["symbol"] = symbol
+        if order_class is not None:
+            payload["order_class"] = order_class
+
+    if limit_price is not None:
+        payload["limit_price"] = str(limit_price)
+    if order_id is not None:
+        payload["order_id"] = order_id
+    for k, v in extra.items():
+        if k in _STRING_NUMERIC_FIELDS and isinstance(v, (int, float)):
+            payload[k] = str(v)
+        else:
+            payload[k] = v
+    return payload
+
+
 def _call_from_tool_clause(clause: ToolCallClause, *, from_count: bool, index: int) -> CallAction:
     # A tool_call() clause with no name~= (e.g. tp-005) is deliberately lenient
     # about which tool fires; in this domain an unnamed call carrying a
     # `symbol` argument is overwhelmingly likely to be an order placement.
     name = clause.name_substr or "place_stock_order"
-    arguments: dict[str, Any] = {cond.field: cond.value for cond in clause.arg_conditions}
+    arguments: dict[str, Any] = {}
+    for cond in clause.arg_conditions:
+        if cond.field in _STRING_NUMERIC_FIELDS and isinstance(cond.value, (int, float)):
+            arguments[cond.field] = str(cond.value)
+        elif cond.field == "legs" and isinstance(cond.value, list):
+            formatted_legs = []
+            for leg in cond.value:
+                if isinstance(leg, dict):
+                    fleg = dict(leg)
+                    if "ratio_qty" in fleg and isinstance(fleg["ratio_qty"], (int, float)):
+                        fleg["ratio_qty"] = str(fleg["ratio_qty"])
+                    formatted_legs.append(fleg)
+                else:
+                    formatted_legs.append(leg)
+            arguments["legs"] = formatted_legs
+        else:
+            arguments[cond.field] = cond.value
+
+    is_option = _is_option_tool(name)
     if from_count:
         # Repeated calls need to look like genuinely separate orders: distinct
         # price levels (so layering_detector's price-level count is real) and
         # a unique order_id.
-        arguments.setdefault("limit_price", 100.0 + index)
-        arguments.setdefault("qty", 10)
+        # String-typed to match Alpaca's real place_stock_order / place_option_order schemas.
+        if is_option:
+            arguments.setdefault("limit_price", f"{5.0 + index:.2f}")
+            arguments.setdefault("qty", "1")
+        else:
+            arguments.setdefault("limit_price", f"{100.0 + index:.2f}")
+            arguments.setdefault("qty", "10")
         arguments["order_id"] = f"seq-{index}"
     return CallAction(name=name, arguments=arguments, from_count=from_count)
 
@@ -104,6 +214,9 @@ def derive_actions(predicate: Predicate, induced_call: dict | None = None) -> li
                         "doesn't name a tool"
                     )
                 arguments = dict(induced_call["arguments"])
+                for k, v in list(arguments.items()):
+                    if k in _STRING_NUMERIC_FIELDS and isinstance(v, (int, float)):
+                        arguments[k] = str(v)
                 actions.append(
                     CallAction(name=induced_call["name"], arguments=arguments, from_count=False)
                 )

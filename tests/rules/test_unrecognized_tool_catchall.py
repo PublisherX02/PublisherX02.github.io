@@ -74,3 +74,96 @@ def test_real_but_currently_unmapped_action_tool_triggers():
     outcome = rule.check("close_position", {"symbol_or_asset_id": "AAPL"}, {})
 
     assert outcome.triggered
+
+
+def test_default_policy_and_presets_pass_catchall_coverage():
+    import yaml
+    from pathlib import Path
+    from firewall.rules.unrecognized_tool_catchall import validate_catchall_coverage
+
+    repo_root = Path(__file__).resolve().parents[2]
+    policies_dir = repo_root / "policies"
+
+    policy_files = [
+        "default.yaml",
+        "preset_1_loose.yaml",
+        "preset_2.yaml",
+        "preset_3.yaml",
+        "preset_4.yaml",
+        "preset_5_strict.yaml",
+    ]
+
+    for pfile in policy_files:
+        data = yaml.safe_load((policies_dir / pfile).read_text(encoding="utf-8"))
+        # Should execute cleanly with zero errors/drift
+        validate_catchall_coverage(data["rules"])
+
+
+def test_catchall_validation_fails_on_uncovered_rule_pattern():
+    import pytest
+    from firewall.rules.unrecognized_tool_catchall import validate_catchall_coverage
+
+    rules = [
+        {
+            "id": "new-transfer-rule",
+            "type": "notional_cap",
+            "tool_match": ["transfer_funds"],
+        },
+        {
+            "id": "unrecognized-tool-catchall",
+            "type": "unrecognized_tool_catchall",
+            "covered_patterns": ["order", "cancel_all"],
+            "read_only_whitelist": ["get_clock"],
+        },
+    ]
+
+    with pytest.raises(ValueError, match="Catchall pattern coverage drift detected") as exc_info:
+        validate_catchall_coverage(rules)
+    assert "transfer_funds" in str(exc_info.value)
+
+
+def test_catchall_validation_fails_on_orphaned_covered_pattern():
+    import pytest
+    from firewall.rules.unrecognized_tool_catchall import validate_catchall_coverage
+
+    rules = [
+        {
+            "id": "order-rule",
+            "type": "notional_cap",
+            "tool_match": ["order"],
+        },
+        {
+            "id": "unrecognized-tool-catchall",
+            "type": "unrecognized_tool_catchall",
+            "covered_patterns": ["order", "nonexistent_action_xyz"],
+            "read_only_whitelist": ["get_clock"],
+        },
+    ]
+
+    with pytest.raises(ValueError, match="Orphaned covered_patterns") as exc_info:
+        validate_catchall_coverage(rules)
+    assert "nonexistent_action_xyz" in str(exc_info.value)
+
+
+def test_catchall_validation_fails_on_action_tool_in_whitelist():
+    import pytest
+    from firewall.rules.unrecognized_tool_catchall import validate_catchall_coverage
+
+    rules = [
+        {
+            "id": "order-rule",
+            "type": "notional_cap",
+            "tool_match": ["order"],
+        },
+        {
+            "id": "unrecognized-tool-catchall",
+            "type": "unrecognized_tool_catchall",
+            "covered_patterns": ["order"],
+            "read_only_whitelist": ["place_stock_order"],  # Action tool improperly whitelisted
+        },
+    ]
+
+    with pytest.raises(ValueError, match="Action tools improperly listed on read_only_whitelist") as exc_info:
+        validate_catchall_coverage(rules)
+    assert "place_stock_order" in str(exc_info.value)
+

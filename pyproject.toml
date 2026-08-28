@@ -12,6 +12,7 @@ dependencies = [
     "fastmcp>=2.0.0",
     "pydantic>=2.0.0",
     "pyyaml>=6.0",
+    "python-dotenv>=1.0.0",
 ]
 
 [project.optional-dependencies]
@@ -20,7 +21,8 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/firewall"]
+packages = ["src/firewall", "src/core_strategy.py"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]

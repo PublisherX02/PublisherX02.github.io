@@ -209,6 +209,29 @@ def test_failed_fetch_fails_closed_with_specific_reason():
     assert "timed out after 5.0s fetching bars for AAPL" in outcome.reason
 
 
+def test_string_typed_qty_and_price_is_assessed_not_skipped():
+    # Conformance-audit finding A4 (live-execution shape): a string-typed
+    # qty/limit_price (Alpaca's real place_stock_order schema) must be
+    # parsed into a real notional and risk-assessed, not silently skipped
+    # as if the order couldn't be sized.
+    bars = _bars_result([100.0] * 29 + [50.0])
+    rule, calls = _rule(
+        bars,
+        cvar_max_loss_pct_of_equity=0.01,
+        cvar_alpha=0.9,
+        cvar_lookback_days=45,
+    )
+
+    outcome = rule.check(
+        "place_stock_order",
+        {"symbol": "AAPL", "qty": "100", "limit_price": "100.00"},
+        {"account_equity": 100.0},
+    )
+
+    assert outcome.triggered
+    assert calls == [("AAPL", 45)]
+
+
 def test_within_max_loss_does_not_trigger():
     # Flat prices -> zero daily returns -> zero CVaR, under any positive cap.
     rule, calls = _rule(_flat_bars(30), cvar_max_loss_pct_of_equity=0.01)

@@ -3,11 +3,17 @@
 # Strictness sweep point 2 of 5. Used only by evals/run.py to plot the
 # ASR-vs-FPR tradeoff curve -- not a deployment config.
 #
-# gtc_restriction and cooldown_after_loss are deliberately excluded from
-# this sweep: gtc_restriction is a boolean policy choice (allow/disallow
-# GTC orders), not a value that graduates along a loose-to-strict axis;
-# cooldown_after_loss was a later addition to policies/default.yaml not
-# yet extended to the preset sweep. Neither is an oversight.
+# 9 of default.yaml's 21 rules are deliberately excluded from this sweep:
+# gtc_restriction (a boolean policy choice -- allow/disallow GTC orders --
+# not a value that graduates along a loose-to-strict axis), cooldown_after_loss
+# (a later addition to policies/default.yaml not yet extended to the preset
+# sweep), hedge_proposal (detection/reporting only -- RuleOutcome is always
+# False, so it cannot affect ASR/FPR regardless of inclusion), and 6
+# option-order-specific hard rules -- hedge_cost_cap, hedge_regime_call_guard,
+# net_delta_floor, option_expiry_floor, option_sell_guard, option_spread_guard
+# -- excluded because this sweep's corpus (corpus/*.yaml) carries zero
+# place_option_order payloads, so their inclusion would have no measurable
+# effect at any preset. None of the 9 is an oversight.
 
 version: "0.1.0-preset2"
 

@@ -1,0 +1,148 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  workflow_dispatch: {}  # manual trigger for the heavy job, no waiting for a schedule
+  schedule:
+    - cron: '0 6 * * 1'  # weekly only — this one depends on Alpaca's live tool surface, not this repo
+
+env:
+  ALPACA_PAPER_TRADE: "true"
+  ALPACA_API_KEY: "PKCIDUMMYNOTAREALKEY0000"
+  ALPACA_SECRET_KEY: "ci-dummy-not-a-real-secret"
+
+jobs:
+
+  # ── FAST TIER — every push, one Python setup, ~a minute total ───────────
+  # Covers: baseline tests, E1 (configs fail closed), the round-1 tool-name
+  # regression, B2's forwarded= grammar check, C1-C4 audit-chain tests,
+  # D5's hardcoded-threshold grep. Everything here is cheap and deterministic.
+
+  fast-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -e ".[dev]"
+
+      - name: Full pytest suite (unit + integration + audit-chain + tool-name-matching)
+        run: pytest -v --tb=short
+
+      - name: Every policy YAML must load cleanly or fail loudly
+        run: |
+          set -e
+          for f in policies/*.yaml; do
+            echo "Validating $f"
+            python -c "from firewall.policy import PolicyEngine; PolicyEngine.from_yaml('$f')"
+          done
+
+      - name: Every success_check tool_call()/count() must specify forwarded=
+        run: |
+          set -e
+          BAD=$(grep -n "success_check:" corpus/*.yaml \
+                | grep -E "tool_call\(|count\(tool_call" \
+                | grep -v "forwarded=" || true)
+          if [ -n "$BAD" ]; then
+            echo "::error::success_check clauses missing explicit forwarded= scoping:"
+            echo "$BAD"; exit 1
+          fi
+
+      - name: Flag possible hardcoded thresholds outside self.cfg (warning only)
+        run: |
+          HITS=$(grep -nE "(>=|<=|>|<|==)\s*[0-9]+\.?[0-9]*" src/firewall/rules/*.py \
+                 | grep -vE "self\.cfg\.|self\.config\." || true)
+          if [ -n "$HITS" ]; then
+            echo "::warning::Possible hardcoded thresholds — review manually:"
+            echo "$HITS"
+          fi
+
+  # ── SECRET SCAN — separate because it needs full history, not Python ────
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── PR-ONLY HYGIENE — pure git/grep, no Python needed, near-instant ──────
+
+  threshold-isolation-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Warn if thresholds.yaml changes alongside rule/corpus logic
+        run: |
+          CHANGED=$(git diff --name-only origin/${{ github.base_ref }}...HEAD)
+          if echo "$CHANGED" | grep -q "evals/thresholds.yaml" && \
+             echo "$CHANGED" | grep -qE "^(src/firewall/rules/|corpus/)"; then
+            echo "::warning::thresholds.yaml changed alongside rule/corpus logic in the same PR — consider separating for a defensible pre-registration record."
+          fi
+
+  # ── HEAVY TIER — one Python setup, three slow checks. Runs on PRs to    ──
+  # ── main and on manual dispatch — NOT on every push to dev. This is the ──
+  # ── tier that was previously four cold-started jobs; now it's one.      ──
+
+  heavy-checks:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'pull_request' && github.base_ref == 'main')
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+      - run: pip install -e ".[dev]" mutmut
+
+      - name: Mutation testing on rule-evaluation logic (D3, automated)
+        run: |
+          mutmut run --paths-to-mutate=src/firewall/rules/
+          # confirm this flag matches whatever mutmut version pyproject.toml pins
+          SURVIVED=$(mutmut results | grep -c "SURVIVED" || true)
+          if [ "$SURVIVED" -gt 0 ]; then
+            echo "::error::$SURVIVED surviving mutant(s) in src/firewall/rules/"; exit 1
+          fi
+
+      - name: Eval harness pass/fail gate (default.yaml against thresholds.yaml)
+        run: |
+          python evals/run.py --config default --seed 1337 --out evals/out/ci_a.json
+          GATE=$(python -c "import json; print(json.load(open('evals/out/ci_a.json'))['gate'])")
+          if [ "$GATE" != "PASS" ]; then
+            echo "::error::Eval harness gate FAILED against thresholds.yaml"; exit 1
+          fi
+
+      - name: Reproducibility check (G3) — same seed, second run, must match
+        run: |
+          python evals/run.py --seed 1337 --out evals/out/ci_b.json
+          python -c "
+          import json, sys
+          a = json.load(open('evals/out/ci_a.json')); a.pop('generated_at', None)
+          b = json.load(open('evals/out/ci_b.json')); b.pop('generated_at', None)
+          if a != b:
+              print('::error::Same-seed runs differ — reproducibility broken'); sys.exit(1)
+          "
+
+  # ── SCHEDULED ONLY — depends on Alpaca's live tool surface, not this repo ─
+
+  live-upstream-tool-drift-check:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11', cache: 'pip' }
+      - run: pip install -e ".[dev]"
+      - run: python scripts/check_upstream_tool_drift.py
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_PAPER_KEY_ID }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_PAPER_SECRET_KEY }}

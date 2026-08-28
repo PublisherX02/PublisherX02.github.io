@@ -8,8 +8,8 @@
 # to read directly, so these entries never contaminate the main harness's
 # metrics.
 #
-# Schema (a superset of benign.yaml's -- see its header for the shared
-# fields): each entry adds `induced_call` (same shape as the attack
+# Schema (a superset of benign.yaml's -- see evals/GRAMMAR.md for the shared
+# predicate grammar): each entry adds `induced_call` (same shape as the attack
 # corpora's optional field: {name, arguments}) and `expected_hard_block`
 # ({rule_id, reason_substring}), naming exactly which rule must fire and
 # what its reason must contain.

@@ -7,13 +7,14 @@ configured rules (see firewall/rules/) against incoming MCP tool calls.
 from __future__ import annotations
 
 import logging
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
 import yaml
 from pydantic import BaseModel
 
-from firewall.audit import AuditLogWriter, UpstreamStatus
+from firewall.audit import AuditEvent, AuditLogWriter, UpstreamStatus, compute_record_hash
 from firewall.rules import RULE_TYPES, Rule, RuleConfig
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,37 @@ class Verdict(BaseModel):
     regulation_ref: str | None = None
     reason: str | None = None
     warnings: list[Warning] = []
+
+
+def _is_unsupported_order_shape(arguments: dict[str, Any]) -> bool:
+    """True if order shape is bracket, OCO, OTO, multi-leg with >1 leg,
+    or has take_profit/stop_loss fields present."""
+    if not arguments:
+        return False
+    order_class = arguments.get("order_class")
+    order_class_str = str(order_class).lower() if isinstance(order_class, str) else ""
+    if order_class_str in ("bracket", "oco", "oto"):
+        return True
+    legs = arguments.get("legs")
+    if order_class_str == "mleg" and isinstance(legs, list) and len(legs) > 1:
+        return True
+    if isinstance(legs, list) and len(legs) > 1:
+        return True
+    if arguments.get("take_profit") is not None or arguments.get("stop_loss") is not None:
+        return True
+    return False
+
+
+def _describe_verdict(verdict: Verdict) -> tuple[str, str | None, str | None, str]:
+    """Shared by record_call_pending/record_call_outcome: an allow verdict
+    with warnings audit-logs as "soft_block" attributed to its first
+    warning (matching record_call_outcome's pre-existing behavior);
+    without warnings it's a plain "allow"."""
+    if verdict.warnings:
+        first = verdict.warnings[0]
+        reason = "; ".join(f"{w.rule_id}: {w.reason}" for w in verdict.warnings)
+        return "soft_block", first.rule_id, first.regulation_ref, reason
+    return "allow", None, None, "no rule triggered"
 
 
 class PolicyEngine:
@@ -107,6 +139,31 @@ class PolicyEngine:
         """
         state = state if state is not None else {}
         warnings: list[Warning] = []
+
+        if _is_unsupported_order_shape(arguments):
+            reason = (
+                "bracket/OCO/multi-leg order shapes are not yet risk-assessed "
+                "by this firewall and are blocked until support exists."
+            )
+            rule_id = "unsupported-order-shape"
+            if self.audit_writer is not None:
+                self.audit_writer.append(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    verdict="hard_block",
+                    reason=reason,
+                    forwarded=False,
+                    upstream_status="not_forwarded",
+                    rule_id=rule_id,
+                    regulation_ref=None,
+                )
+            return Verdict(
+                decision="hard_block",
+                rule_id=rule_id,
+                regulation_ref=None,
+                reason=reason,
+                warnings=warnings,
+            )
 
         for rule in self.rules:
             if not rule.enabled:
@@ -185,6 +242,52 @@ class PolicyEngine:
 
         return Verdict(decision="allow", warnings=warnings)
 
+    def record_call_pending(
+        self,
+        tool_name: str,
+        arguments: dict[str, Any],
+        verdict: Verdict,
+    ) -> AuditEvent | None:
+        """Write a "pending" audit record for an allow/soft_block verdict,
+        before the caller (the proxy) has attempted to forward the call
+        upstream.
+
+        This exists so a process crash between deciding to forward a call
+        and actually recording its outcome (see `record_call_outcome`)
+        still leaves a durable record that the call was attempted, rather
+        than losing it entirely. The record is written with
+        `forwarded=None`/`upstream_status="pending"` since neither is
+        knowable yet, and is never mutated afterward -- the matching
+        `record_call_outcome` call writes a second, separate record
+        instead (see `find_unresolved_pending` in firewall.audit for how
+        the two are matched up, and what it means if the second one never
+        arrives).
+
+        Returns the written `AuditEvent`, which the caller must pass as
+        `pending=` to the matching `record_call_outcome` call so the two
+        records can be linked by `call_id`. Returns None (writes nothing)
+        for hard_block verdicts -- `evaluate()` already logged those
+        synchronously, with no forwarding attempt to wait on -- and when
+        no audit_writer is configured.
+        """
+        if verdict.decision == "hard_block":
+            return None
+        if self.audit_writer is None:
+            return None
+
+        verdict_label, rule_id, regulation_ref, reason = _describe_verdict(verdict)
+        return self.audit_writer.append(
+            tool_name=tool_name,
+            arguments=arguments,
+            verdict=verdict_label,
+            reason=reason,
+            forwarded=None,
+            upstream_status="pending",
+            rule_id=rule_id,
+            regulation_ref=regulation_ref,
+            call_id=str(uuid.uuid4()),
+        )
+
     def record_call_outcome(
         self,
         tool_name: str,
@@ -193,9 +296,10 @@ class PolicyEngine:
         *,
         forwarded: bool,
         upstream_status: UpstreamStatus,
+        pending: AuditEvent | None = None,
     ) -> None:
-        """Write the single audit record for a call `evaluate()` allowed
-        (with or without soft-rule warnings), once the caller has actually
+        """Write the audit record for a call `evaluate()` allowed (with or
+        without soft-rule warnings), once the caller has actually
         attempted to forward it upstream.
 
         `evaluate()` cannot write this record itself: for a hard_block it
@@ -204,6 +308,14 @@ class PolicyEngine:
         soft-blocked or not -- whether the call was actually forwarded and
         what upstream_status resulted is only known to the caller (the
         proxy), after `evaluate()` has already returned.
+
+        `pending`, if given, is the `AuditEvent` returned by an earlier
+        `record_call_pending` call for this same call: this record then
+        carries the same `call_id` and a `pending_hash` referencing it, so
+        the pair can be matched up without mutating either record (see
+        `record_call_pending`). Omitting `pending` still writes a normal,
+        unlinked outcome record -- for callers that don't need the
+        crash-safety guarantee, and for backward compatibility.
 
         No-op for hard_block verdicts (already logged by `evaluate()`) so
         callers can call this unconditionally after every `evaluate()`
@@ -215,30 +327,19 @@ class PolicyEngine:
         if self.audit_writer is None:
             return
 
-        if verdict.warnings:
-            first = verdict.warnings[0]
-            reason = "; ".join(f"{w.rule_id}: {w.reason}" for w in verdict.warnings)
-            self.audit_writer.append(
-                tool_name=tool_name,
-                arguments=arguments,
-                verdict="soft_block",
-                reason=reason,
-                forwarded=forwarded,
-                upstream_status=upstream_status,
-                rule_id=first.rule_id,
-                regulation_ref=first.regulation_ref,
-            )
-        else:
-            self.audit_writer.append(
-                tool_name=tool_name,
-                arguments=arguments,
-                verdict="allow",
-                reason="no rule triggered",
-                forwarded=forwarded,
-                upstream_status=upstream_status,
-                rule_id=None,
-                regulation_ref=None,
-            )
+        verdict_label, rule_id, regulation_ref, reason = _describe_verdict(verdict)
+        self.audit_writer.append(
+            tool_name=tool_name,
+            arguments=arguments,
+            verdict=verdict_label,
+            reason=reason,
+            forwarded=forwarded,
+            upstream_status=upstream_status,
+            rule_id=rule_id,
+            regulation_ref=regulation_ref,
+            call_id=pending.call_id if pending is not None else None,
+            pending_hash=compute_record_hash(pending) if pending is not None else None,
+        )
 
     def reset(self, rule_id: str) -> None:
         """Clear sticky state (e.g. a tripped killswitch) on one rule."""

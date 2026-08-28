@@ -24,6 +24,15 @@ class _Params(BaseModel):
     price_field: str = "limit_price"
     # Expected shape: state[positions_state_key] == {symbol: current_usd_exposure}
     positions_state_key: str = "positions"
+    # See notional_cap.py's identical field and its module docstring for the
+    # full reasoning (verified against alpaca-mcp-server's real input
+    # schemas): NOT place_stock_order/place_option_order/place_crypto_order
+    # -- a plain market buy order legitimately carries qty and no price at
+    # all, and that's normal, not incomplete data. Only replace_order_by_id
+    # fails closed on a None notional: Alpaca lets a qty-only amendment
+    # through while silently leaving the existing resting price untouched,
+    # a price this firewall has no visibility into.
+    sizing_tool_match: list[str] = ["replace_order_by_id"]
 
 
 class PositionCapRule(Rule):
@@ -51,6 +60,11 @@ class PositionCapRule(Rule):
             arguments, self.cfg.notional_field, self.cfg.qty_field, self.cfg.price_field
         )
         if notional is None:
+            if matches_any(tool_name, self.cfg.sizing_tool_match):
+                return RuleOutcome(
+                    True,
+                    "cannot compute notional — incomplete order data, failing closed",
+                )
             return RuleOutcome(False)
 
         positions: dict[str, Any] = state.get(self.cfg.positions_state_key) or {}

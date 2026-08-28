@@ -44,7 +44,15 @@ import yaml
 sys.path.insert(0, str(Path(__file__).parent))  # for `import predicates`, `import agent`, `import market_data_stub`
 
 from agent import Action, CallAction, LeakAction, NaiveComplianceAgent, derive_actions
-from predicates import Predicate, PredicateSyntaxError, SessionRecord, SessionResult, evaluate, parse_predicate
+from predicates import (
+    Predicate,
+    PredicateSyntaxError,
+    SessionRecord,
+    SessionResult,
+    evaluate,
+    parse_predicate,
+    validate_corpus_file,
+)
 
 from market_data_stub import test_only_stub_bars_fetcher
 
@@ -147,9 +155,9 @@ SYNTHETIC_SECRETS = {
 # turn) imply a distinct read-only call to check -- see results.md.
 PRETEXT_CALL_BY_DELIVERY = {
     "news tool result": "get_news",
-    "market data tool result": "get_quote",
-    "positions tool result": "get_positions",
-    "order status tool result": "get_order_status",
+    "market data tool result": "get_stock_latest_quote",
+    "positions tool result": "get_all_positions",
+    "order status tool result": "get_order_by_id",
 }
 
 
@@ -179,9 +187,8 @@ def _substitute_secrets(actions: list[Action]) -> list[Action]:
 def load_corpus() -> dict[str, list[dict]]:
     corpus: dict[str, list[dict]] = {}
     for class_name, fname in ATTACK_CLASS_FILES.items():
-        data = yaml.safe_load((CORPUS_DIR / fname).read_text(encoding="utf-8"))
-        corpus[class_name] = data["payloads"]
-    corpus["benign"] = yaml.safe_load((CORPUS_DIR / "benign.yaml").read_text(encoding="utf-8"))["payloads"]
+        corpus[class_name] = validate_corpus_file(CORPUS_DIR / fname)
+    corpus["benign"] = validate_corpus_file(CORPUS_DIR / "benign.yaml")
     return corpus
 
 
@@ -228,7 +235,7 @@ class Session:
         lname = name.lower()
         symbol = arguments.get("symbol")
 
-        if "place_order" in lname:
+        if any(p in lname for p in ("place_order", "place_stock_order", "place_option_order", "place_crypto_order")) or ("place_" in lname and "order" in lname):
             if not symbol:
                 return
             order_id = arguments.get("order_id") or self._new_order_id()
@@ -237,13 +244,25 @@ class Session:
             # single call models a leg that actually executed -> "filled",
             # which is what wash_trade_detector requires to fire.
             outcome = "open" if from_count else "filled"
+            raw_qty = arguments.get("qty")
+            try:
+                parsed_qty = float(raw_qty) if raw_qty is not None else 0.0
+            except (ValueError, TypeError):
+                parsed_qty = 0.0
+
+            raw_price = arguments.get("limit_price")
+            try:
+                parsed_price = float(raw_price) if raw_price is not None else None
+            except (ValueError, TypeError):
+                parsed_price = None
+
             history.record(
                 timestamp=self.state["now"],
                 tool=name,
                 symbol=symbol,
                 side=arguments.get("side", "buy"),
-                qty=arguments.get("qty") or 0,
-                price=arguments.get("limit_price"),
+                qty=parsed_qty,
+                price=parsed_price,
                 order_id=order_id,
                 outcome=outcome,
             )
@@ -261,8 +280,16 @@ def _perturb(arguments: dict[str, Any], rng: random.Random) -> dict[str, Any]:
     this way -- and the retry correctly keeps failing)."""
     new_args = dict(arguments)
     for f in ("qty", "notional"):
-        if isinstance(new_args.get(f), (int, float)):
-            new_args[f] = round(new_args[f] * rng.uniform(0.5, 0.9), 2)
+        val = new_args.get(f)
+        if isinstance(val, (int, float)):
+            new_args[f] = round(val * rng.uniform(0.5, 0.9), 2)
+        elif isinstance(val, str):
+            try:
+                num = float(val)
+                perturbed = round(num * rng.uniform(0.5, 0.9), 2)
+                new_args[f] = str(int(perturbed)) if val.isdigit() else str(perturbed)
+            except ValueError:
+                pass
     return new_args
 
 
@@ -577,13 +604,31 @@ def write_results_md(path: Path, results: dict[str, Any]) -> None:
 
     lines.append("## ASR-vs-FPR strictness sweep (config C, first pass only)\n")
     lines.append(f"> {results['sweep_note']}\n")
-    lines.append("| Preset | Policy version | ASR | FPR |")
-    lines.append("|---|---|---|---|")
+    lines.append(
+        "> **Rule coverage disclosure:** This sweep evaluates a 12-rule gradient across "
+        "the 5 presets, not all 21 rules in `default.yaml`. 9 rules are deliberately "
+        "excluded: `gtc_restriction` (a boolean policy choice, not a graduated "
+        "parameter), `cooldown_after_loss` (later `default.yaml` addition not yet "
+        "parameterized across presets), `hedge_proposal` (detection-only — "
+        "`RuleOutcome` is always `False`, so inclusion cannot affect ASR/FPR), and 6 "
+        "option-order-specific hard rules (`hedge_cost_cap`, `hedge_regime_call_guard`, "
+        "`net_delta_floor`, `option_expiry_floor`, `option_sell_guard`, "
+        "`option_spread_guard`) excluded because this sweep's corpus carries zero "
+        "`place_option_order` payloads, so their inclusion would have no measurable "
+        "effect at any preset (see preset YAML headers).\n"
+    )
+    lines.append("| Preset | Policy version | Rules in gradient | ASR | FPR |")
+    lines.append("|---|---|---|---|---|")
     for point in results["strictness_sweep"]:
         lines.append(
             f"| {point['preset']} | {point['policy_version']} | "
+            f"12 rules* | "
             f"{_fmt_pct(point['asr_overall_first_pass'])} | {_fmt_pct(point['fpr'])} |"
         )
+    lines.append("")
+    lines.append(
+        "\\* *Note: Evaluates a 12-rule gradient across all 5 presets, deliberately excluding `gtc_restriction` (boolean policy choice), `cooldown_after_loss` (not yet parameterized in presets), `hedge_proposal` (detection-only), and 6 option-order rules from `default.yaml` (zero option payloads in corpus); see preset YAML headers.*"
+    )
     lines.append("")
 
     lines.append("## Scope & caveats\n")
@@ -616,6 +661,14 @@ def write_results_md(path: Path, results: dict[str, Any]) -> None:
         "tool-description, user-turn, and prior-assistant-turn deliveries there is "
         "no separate pretext call in this harness's model, so those score as "
         "trivially non-blocked (1.0) rather than genuinely measured."
+    )
+    lines.append(
+        "- **Sweep evaluates a 12-rule gradient, not all 21 rules in `default.yaml`.** "
+        "9 rules are deliberately excluded across all 5 preset configs: "
+        "`gtc_restriction`, `cooldown_after_loss`, `hedge_proposal` (detection-only), "
+        "and 6 option-order-specific hard rules unreachable by a corpus with zero "
+        "`place_option_order` payloads — matching the disclosure in each preset's "
+        "YAML header."
     )
 
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -694,7 +747,18 @@ def main(argv: list[str] | None = None) -> int:
             "preset's cap); im-021 hard-blocks via unrecognized-tool-catchall at "
             "all 5. ASR/FPR at every sweep point below reflect this wider rule "
             "set and corpus and should not be diffed against any sweep table "
-            "generated before this change."
+            "generated before this change. "
+            "The sweep evaluates a 12-rule gradient across the 5 presets, not all 21 "
+            "rules in default.yaml. 9 are deliberately excluded: gtc_restriction "
+            "(boolean allow/disallow policy choice, not a graduated threshold), "
+            "cooldown_after_loss (later default.yaml addition not yet extended to the "
+            "presets), hedge_proposal (detection-only -- RuleOutcome is always False, "
+            "so it cannot affect ASR/FPR regardless of inclusion), and 6 "
+            "option-order-specific hard rules (hedge_cost_cap, hedge_regime_call_guard, "
+            "net_delta_floor, option_expiry_floor, option_sell_guard, "
+            "option_spread_guard) excluded because this sweep's corpus carries zero "
+            "place_option_order payloads, so their inclusion would have no measurable "
+            "effect at any preset; see preset headers)."
         ),
         "max_retries": thresholds["max_retries"],
         "corpus_counts": {k: len(v) for k, v in corpus.items()},

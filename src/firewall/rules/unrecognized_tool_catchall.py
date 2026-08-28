@@ -71,3 +71,75 @@ class UnrecognizedToolCatchallRule(Rule):
             f"unrecognized tool {tool_name!r} — not covered by any policy rule, "
             "failing closed",
         )
+
+
+def validate_catchall_coverage(rules: list[dict[str, Any]]) -> None:
+    """Cross-checks unrecognized_tool_catchall's covered_patterns and read_only_whitelist
+    against every other rule's actual configured tool_match patterns.
+
+    Raises ValueError with a detailed explanation if:
+    1. Any rule configures a tool matching pattern not covered by catchall.covered_patterns.
+    2. catchall.covered_patterns contains an orphaned pattern not used by any rule.
+    3. Any action tool (e.g. place_*, cancel_*, close_*, replace_*, liquidate) appears on read_only_whitelist.
+    """
+    catchall_rule: dict[str, Any] | None = None
+    for r in rules:
+        if r.get("type") == "unrecognized_tool_catchall":
+            catchall_rule = r
+            break
+
+    if catchall_rule is None:
+        raise ValueError("Policy configuration missing 'unrecognized_tool_catchall' rule")
+
+    catchall_params = catchall_rule.get("params", {}) if "params" in catchall_rule else catchall_rule
+    covered_patterns = catchall_params.get("covered_patterns", [])
+    read_only_whitelist = catchall_params.get("read_only_whitelist", [])
+
+    # Collect all tool matching patterns from other rules
+    rule_patterns: dict[str, list[str]] = {}
+    for r in rules:
+        if r.get("type") == "unrecognized_tool_catchall":
+            continue
+        rule_id = r.get("id", "<unknown>")
+        params = r.get("params", {}) if "params" in r else r
+        patterns: list[str] = []
+        for k, v in params.items():
+            if (k.endswith("tool_match") or k.endswith("_match") or k == "tool_match") and isinstance(v, list):
+                for item in v:
+                    if isinstance(item, str):
+                        patterns.append(item)
+        if patterns:
+            rule_patterns[rule_id] = patterns
+
+    # 1. Check for uncovered rule patterns
+    uncovered: list[str] = []
+    for rule_id, patterns in rule_patterns.items():
+        for pat in patterns:
+            if not matches_any(pat, covered_patterns):
+                uncovered.append(f"rule '{rule_id}' pattern {pat!r}")
+
+    # 2. Check for orphaned covered_patterns
+    all_rule_patterns = [pat for patterns in rule_patterns.values() for pat in patterns]
+    orphaned: list[str] = []
+    for cov in covered_patterns:
+        if not any(cov.lower() in p.lower() or p.lower() in cov.lower() for p in all_rule_patterns):
+            orphaned.append(cov)
+
+    # 3. Check for action tools inappropriately placed on read_only_whitelist
+    action_prefixes = ("place_", "cancel_", "close_", "liquidate", "replace_", "delete_", "create_", "update_")
+    action_tool_in_whitelist: list[str] = []
+    for tool in read_only_whitelist:
+        if any(tool.lower().startswith(p) for p in action_prefixes):
+            action_tool_in_whitelist.append(tool)
+
+    errors = []
+    if uncovered:
+        errors.append(f"Uncovered rule patterns not matched by covered_patterns: {', '.join(uncovered)}")
+    if orphaned:
+        errors.append(f"Orphaned covered_patterns not matching any rule: {', '.join(orphaned)}")
+    if action_tool_in_whitelist:
+        errors.append(f"Action tools improperly listed on read_only_whitelist: {', '.join(action_tool_in_whitelist)}")
+
+    if errors:
+        raise ValueError("Catchall pattern coverage drift detected:\n" + "\n".join(f"- {e}" for e in errors))
+
