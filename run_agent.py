@@ -9,8 +9,7 @@ sys.modules["run_agent"] = module
 spec.loader.exec_module(module)
 
 def main():
-    module.main()
+    return module.main()
 
 if __name__ == "__main__":
     main()
-

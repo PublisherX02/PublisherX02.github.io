@@ -722,6 +722,14 @@ suppressed inside the firewall proxy:
 python -m run_agent --dry-run --budget 1000 --no-overlay
 ```
 
+Omitting both mode flags is also dry-run. Direct paper submission requires
+both the explicit execute flag and an exact account pin:
+
+```bash
+python -m run_agent --execute --expected-account-id YOUR_ACCOUNT_ID \
+  --budget 1000 --no-overlay
+```
+
 Bounded autonomous dry-run loop (default), gated by Alpaca's market clock:
 
 ```bash

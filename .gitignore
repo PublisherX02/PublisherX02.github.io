@@ -26,3 +26,4 @@ agentdb.rvf.lock
 
 # Local agent worktrees are separate repositories, never project content.
 .claude/worktrees/
+.checkpoint_verify/

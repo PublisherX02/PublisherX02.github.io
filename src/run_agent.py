@@ -145,7 +145,7 @@ class HumanReadableCycleRunner:
         verbose: bool = False,
         cycle_id: str | None = None,
         expected_account_id: str | None = None,
-        dry_run: bool = False,
+        dry_run: bool = True,
         lifecycle_poll_attempts: int = 3,
         recover_interrupted: bool = False,
     ) -> None:
@@ -971,7 +971,10 @@ class HumanReadableCycleRunner:
             )
 
         return {
-            "ok": True,
+            "ok": final_positions_verified,
+            "reason": None if final_positions_verified else (
+                final_position_state.reason or "post-cycle position outcome is unverified"
+            ),
             "equity": account_equity,
             "executed_count": sum(1 for order in executed_orders if order["broker"]["filled"]),
             "submitted_count": sum(
@@ -986,7 +989,7 @@ class HumanReadableCycleRunner:
         }
 
 
-async def main_async() -> None:
+async def main_async(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run one full end-to-end cycle of the trading system with firewall governance.")
     parser.add_argument("--budget", type=float, default=None, help="Explicit total budget USD override")
     parser.add_argument("--drift-threshold", type=float, default=core_strategy.DEFAULT_DRIFT_THRESHOLD, help="Drift threshold (default: 0.05)")
@@ -1002,10 +1005,16 @@ async def main_async() -> None:
         action="store_true",
         help="read and validate paper account state without constructing an order cycle",
     )
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--execute",
+        action="store_true",
+        help="enable paper submissions; requires an exact expected account ID",
+    )
+    mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="evaluate policies and read live paper data but suppress every upstream mutation",
+        help="explicitly select the default safe mode; all upstream mutations are suppressed",
     )
     parser.add_argument(
         "--lifecycle-poll-attempts",
@@ -1017,17 +1026,25 @@ async def main_async() -> None:
         "--recover", action="store_true",
         help="explicitly acknowledge and recover an interrupted prior cycle",
     )
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    dry_run = not args.execute
+
+    if args.execute and not args.expected_account_id:
+        console.print(
+            "[bold red]Execution refused: --execute requires --expected-account-id "
+            "or ALPACA_EXPECTED_ACCOUNT_ID.[/bold red]"
+        )
+        return 2
 
     if args.preflight_only:
         pnl = account_data.fetch_session_pnl(cache_ttl_seconds=0)
         positions = account_data.fetch_positions(cache_ttl_seconds=0)
         if not pnl.ok:
             console.print(f"[bold red]Paper-account preflight failed: {pnl.reason}[/bold red]")
-            return
+            return 1
         if args.expected_account_id and pnl.account_id != args.expected_account_id:
             console.print("[bold red]Paper-account preflight failed: account ID mismatch.[/bold red]")
-            return
+            return 1
         account_label = pnl.account_id or "unavailable"
         masked = account_label if len(account_label) <= 8 else f"{account_label[:4]}...{account_label[-4:]}"
         position_count = len(positions.positions or {}) if positions.ok else "unavailable"
@@ -1036,7 +1053,7 @@ async def main_async() -> None:
             f"account={masked} | equity={_format_currency(pnl.equity)} | "
             f"positions={position_count} | submissions=DISABLED"
         )
-        return
+        return 0
 
     prior_state = load_cycle_state()
     cycle_id, recovering = cycle_id_for_run(prior_state, args.recover)
@@ -1045,14 +1062,14 @@ async def main_async() -> None:
         lock.acquire()
     except CycleAlreadyRunning as exc:
         console.print(f"[bold red]Refusing overlapping run: {exc}[/bold red]")
-        return
+        return 1
     if prior_state and prior_state.get("status") in {"starting", "running"} and not args.recover:
         console.print(
             "[bold red]Refusing automatic restart: the prior cycle ended without a terminal "
             "state. Reconcile Alpaca orders, then rerun with --recover.[/bold red]"
         )
         lock.release()
-        return
+        return 1
     write_cycle_state(cycle_id, "starting")
 
     # Suppress verbose RPC logs and warnings unless --verbose is given
@@ -1072,7 +1089,7 @@ async def main_async() -> None:
                     verbose=args.verbose,
                     cycle_id=cycle_id,
                     expected_account_id=args.expected_account_id,
-                    dry_run=args.dry_run,
+                    dry_run=dry_run,
                     lifecycle_poll_attempts=args.lifecycle_poll_attempts,
                     recover_interrupted=recovering,
                 )
@@ -1085,16 +1102,18 @@ async def main_async() -> None:
                 verbose=args.verbose,
                 cycle_id=cycle_id,
                 expected_account_id=args.expected_account_id,
-                dry_run=args.dry_run,
+                dry_run=dry_run,
                 lifecycle_poll_attempts=args.lifecycle_poll_attempts,
                 recover_interrupted=recovering,
             )
             result = await runner.execute_cycle()
         status = "completed" if result.get("ok") else "failed"
         write_cycle_state(cycle_id, status, details={"result": result})
-    except BaseException as exc:
+        return 0 if result.get("ok") else 1
+    except Exception as exc:
         write_cycle_state(cycle_id, "failed", details={"error": repr(exc)})
-        raise
+        console.print(f"[bold red]Cycle failed during initialization or execution: {exc}[/bold red]")
+        return 1
     finally:
         lock.release()
 
@@ -1103,10 +1122,11 @@ def main() -> None:
     # Silence asyncio proactor pipe cleanup notices during Python interpreter exit
     sys.unraisablehook = lambda unraisable: None
     try:
-        asyncio.run(main_async())
+        exit_code = asyncio.run(main_async())
     finally:
         import gc
         gc.collect()
+    raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

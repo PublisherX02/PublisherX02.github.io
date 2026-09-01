@@ -44,6 +44,8 @@ def cycle_command(config: LoopConfig) -> list[str]:
     command = [sys.executable, "-m", "run_agent"]
     if config.dry_run:
         command.append("--dry-run")
+    else:
+        command.append("--execute")
     if config.budget is not None:
         command.extend(["--budget", str(config.budget)])
     if config.expected_account_id:
@@ -108,12 +110,15 @@ def run_loop(
         result = state.get("result") if isinstance(state.get("result"), dict) else {}
         heartbeat["last_cycle"] = {
             "cycle_id": state.get("cycle_id"),
-            "status": state.get("status"),
+            "status": state.get("status") or ("failed" if code else "completed"),
             "completed_at": state.get("updated_at"),
             "exit_code": code,
+            "failure_reason": result.get("reason") if code else None,
         }
-        heartbeat["reconciliation_status"] = result.get(
-            "reconciliation_status", "failed" if code else "unknown"
+        heartbeat["status"] = "failed" if code else "healthy"
+        heartbeat["reconciliation_status"] = (
+            result.get("reconciliation_status")
+            or ("failed" if code else "verified")
         )
         if stop or (config.max_cycles is not None and completed >= config.max_cycles):
             heartbeat["next_cycle"] = None
