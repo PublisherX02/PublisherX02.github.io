@@ -11,7 +11,8 @@ module docstring in firewall/rules/hedge_proposal.py for why.
 
 from __future__ import annotations
 
-from firewall.market_data import BarsResult, DailyBar
+import firewall.rules.hedge_proposal as hedge_proposal_module
+from firewall.market_data import BarsResult, ContractResolutionResult, DailyBar, ResolvedContract
 from firewall.order_history import OrderHistory
 from firewall.rules.base import RuleConfig
 from firewall.rules.cvar_gate import CVaRGateRule
@@ -590,6 +591,25 @@ def test_is_trigger_normalized_dispatches_properly():
 # --- scheduled options overlay tests ------------------------------------
 
 
+def _patch_contract_resolver(monkeypatch):
+    """Patch resolve_listed_contract with a deterministic, network-free
+    fake that echoes the mechanical target back as if it were the real
+    listed contract -- keeps these unit tests hermetic and their
+    pre-existing exact-value assertions valid without a live Alpaca
+    options-chain call. Tests of resolution FAILURE patch it separately."""
+
+    def fake_resolve(symbol, target_strike, target_expiry, option_type, *, min_dte=None, now=None):
+        occ_symbol = format_occ_symbol(symbol, target_expiry, option_type, target_strike)
+        return ContractResolutionResult(
+            ok=True,
+            contract=ResolvedContract(
+                occ_symbol=occ_symbol, strike=target_strike, expiry=target_expiry
+            ),
+        )
+
+    monkeypatch.setattr(hedge_proposal_module, "resolve_listed_contract", fake_resolve)
+
+
 def test_format_occ_symbol():
     occ = format_occ_symbol("AAPL", "2026-09-18", "P", 220.0)
     assert occ == "AAPL260918P00220000"
@@ -598,7 +618,8 @@ def test_format_occ_symbol():
     assert occ_call == "SPY261030C00550500"
 
 
-def test_compute_scheduled_overlay_on_largest_position():
+def test_compute_scheduled_overlay_on_largest_position(monkeypatch):
+    _patch_contract_resolver(monkeypatch)
     positions = {"AAPL": 100, "MSFT": 50}
     prices = {"AAPL": 150.0, "MSFT": 400.0}  # AAPL: $15,000; MSFT: $20,000 (largest)
 
@@ -633,10 +654,69 @@ def test_compute_scheduled_overlay_returns_none_on_empty_or_zero():
     assert compute_scheduled_overlay({"AAPL": 100}, {"AAPL": 0.0}) is None
 
 
-def test_scheduled_overlay_and_reactive_hedge_have_distinguishable_audit_records():
+def test_compute_scheduled_overlay_returns_none_when_no_contract_resolves(monkeypatch):
+    """A resolution failure (no real listed contract found) must never fall
+    back to asserting a symbol from arithmetic -- it returns None, the same
+    outcome as the pre-existing "nothing to hedge" cases above."""
+
+    def failing_resolve(symbol, target_strike, target_expiry, option_type, *, min_dte=None, now=None):
+        return ContractResolutionResult(ok=False, reason="no tradable contracts listed")
+
+    monkeypatch.setattr(hedge_proposal_module, "resolve_listed_contract", failing_resolve)
+
+    overlay = compute_scheduled_overlay(
+        {"AAPL": 100}, {"AAPL": 150.0}, now=1_700_000_000.0
+    )
+    assert overlay is None
+
+
+def test_compute_scheduled_overlay_passes_expiry_floor_as_min_dte(monkeypatch):
+    """The 7-day option-expiry-floor DTE minimum (policies/default.yaml's
+    option-expiry-floor rule) must reach resolve_listed_contract as
+    min_dte, and the overlay's final strike/expiry must be the RESOLVED
+    contract's real values, not the mechanical target -- proving the
+    interaction is wired, not just the resolver's own internals (which
+    resolve_listed_contract's own unit tests in test_market_data.py
+    already cover in isolation)."""
+    seen_kwargs: dict = {}
+
+    def fake_resolve(symbol, target_strike, target_expiry, option_type, *, min_dte=None, now=None):
+        seen_kwargs["min_dte"] = min_dte
+        seen_kwargs["target_strike"] = target_strike
+        seen_kwargs["target_expiry"] = target_expiry
+        seen_kwargs["option_type"] = option_type
+        # Deliberately different from the target, so the assertions below
+        # can only pass if compute_scheduled_overlay actually uses the
+        # RESOLVED values, not the mechanical target it started from.
+        return ContractResolutionResult(
+            ok=True,
+            contract=ResolvedContract(
+                occ_symbol="AAPL261204P00141000", strike=141.0, expiry="2026-12-04"
+            ),
+        )
+
+    monkeypatch.setattr(hedge_proposal_module, "resolve_listed_contract", fake_resolve)
+
+    overlay = compute_scheduled_overlay(
+        {"AAPL": 100}, {"AAPL": 150.0}, now=1_700_000_000.0
+    )
+
+    assert seen_kwargs["min_dte"] == 7  # _EXPIRY_FLOOR_DAYS, matching option_expiry_floor's default
+    assert seen_kwargs["option_type"] == "P"
+    assert overlay is not None
+    assert overlay.strike == 141.0  # RESOLVED strike, not the mechanical target (142.50)
+    assert overlay.target_expiry == "2026-12-04"  # RESOLVED expiry, not the mechanical target
+    assert overlay.occ_symbol == "AAPL261204P00141000"
+    assert "target was strike" in overlay.reason  # original target still disclosed for transparency
+    assert "selected by DELTA, not price" in overlay.reason
+    assert "resolved delta unavailable" in overlay.reason  # fake resolver left delta=None
+
+
+def test_scheduled_overlay_and_reactive_hedge_have_distinguishable_audit_records(monkeypatch):
     """Verify that both hedge sources produce clearly distinguishable audit records
     with distinct reason prefixes and descriptions so dashboards and write-ups can
     show them as two separate, honest mechanisms."""
+    _patch_contract_resolver(monkeypatch)
     # 1. Reactive trigger proposal
     bars = _bars_result([100.0] * 29 + [50.0])
     cvar_rule = _cvar_rule(

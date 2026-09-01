@@ -22,12 +22,22 @@ from pydantic import BaseModel
 GENESIS_HASH = "0" * 64
 
 Verdict = Literal[
-    "allow", "soft_block", "hard_block", "state_entered", "state_exited"
+    "allow", "soft_block", "hard_block", "state_entered", "state_exited", "info"
 ]
 # "pending" marks a record written before a call was actually forwarded --
 # forwarded/upstream_status aren't knowable yet at that point. See
 # `find_unresolved_pending` and `PolicyEngine.record_call_pending`.
 UpstreamStatus = Literal["ok", "error", "not_forwarded", "pending"]
+
+# "info" is a provenance marker, not a policy decision: it records that a
+# call originated from a specific, disclosed mechanism (e.g. core_strategy's
+# scheduled options overlay) without asserting that any Rule evaluated it --
+# unlike "allow"/"soft_block"/"hard_block", which are always PolicyEngine
+# verdicts. A caller writing an "info" record must never let a reader
+# mistake it for the real policy verdict on the same call: the real verdict
+# is written separately, by the normal evaluate()/record_call_pending/
+# record_call_outcome path, with its own record and its own (possibly
+# different) rule_id.
 
 
 class AuditEvent(BaseModel):

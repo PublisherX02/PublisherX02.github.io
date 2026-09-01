@@ -23,6 +23,7 @@ from firewall.rules.option_expiry_floor import OptionExpiryFloorRule
 from firewall.rules.option_sell_guard import OptionSellGuardRule
 from firewall.rules.option_spread_guard import OptionSpreadGuardRule
 from firewall.rules.order_rate_throttle import OrderRateThrottleRule
+from firewall.rules.pending_order_exposure import PendingOrderExposureRule
 from firewall.rules.pct_of_adv import PctOfAdvRule
 from firewall.rules.place_cancel_ratio import PlaceCancelRatioRule
 from firewall.rules.position_cap import PositionCapRule
@@ -40,6 +41,7 @@ RULE_TYPES: dict[str, type[Rule]] = {
     "blast_radius": BlastRadiusRule,
     "drawdown_killswitch": DrawdownKillswitchRule,
     "order_rate_throttle": OrderRateThrottleRule,
+    "pending_order_exposure": PendingOrderExposureRule,
     "place_cancel_ratio": PlaceCancelRatioRule,
     "layering_detector": LayeringDetectorRule,
     "wash_trade_detector": WashTradeDetectorRule,

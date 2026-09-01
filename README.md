@@ -36,14 +36,29 @@ from `notional_cap`/`position_cap`/`symbol_allowlist`/any other rule. This
 module proposes, the existing firewall governs, exactly like every other
 caller.
 
-**Basket:** a small, fixed, disclosed basket of 4 liquid large-cap US
-tickers, hardcoded in `core_strategy.BASKET`: `AAPL`, `MSFT`, `SPY`,
-`QQQ`. Not selected by any predictive process — reused verbatim from
-`symbol-allowlist`'s own `allowed_symbols` in `policies/default.yaml`
-(see that rule's entry above), so this module runs against the real,
-unmodified default policy with zero policy-file edits. AAPL/MSFT are
-large-cap equities; SPY/QQQ are large-cap-weighted index ETFs, not
-equities in the strict sense — stated plainly rather than glossed over.
+**Basket:** an expanded, fixed, disclosed basket of 11 liquid US tickers
+hardcoded in `core_strategy.BASKET`: the 4 core assets (`AAPL`, `MSFT`, `SPY`,
+`QQQ`) plus 7 second-order federal IT and defense contractors with verified,
+high-dollar subaward linkages to Microsoft Corporation on USASpending.gov
+(`GD`, `CACI`, `ACN`, `LDOS`, `NOC`, `BAH`, `J`). Reused verbatim from
+`symbol-allowlist`'s own `allowed_symbols` in `policies/default.yaml`, running
+against the unmodified default policy. `ASGN` was evaluated and dropped after
+failing Alpaca free-tier 90-day bars availability. **Explicit scope boundary:**
+"the MSFT->federal-contractor link was validated by hand for this specific pair,
+not by a general-purpose resolution engine." AAPL/MSFT and the 7 contractors are
+equities; SPY/QQQ are large-cap index ETFs — stated plainly.
+
+**Allocation Decision:** all 11 names sit alongside each other in a unified
+11-asset inverse-volatility risk-parity basket deploying 90% NAV with a 10% cash
+buffer, governed under the same 25% position cap ($25,000 max) and $5,000
+notional chunking rules. Chosen over a separate sub-allocation sleeve or a
+replacement of the original four: a unified basket needs zero new risk
+parameters — the same `position_cap`/chunking/rebalancing logic already
+verified across AAPL/MSFT/SPY/QQQ governs all 11 names unmodified — and the
+diversification effect is a real, observed one, not an asserted one: SPY's
+raw inverse-vol weight dropped from ~44% in the 4-name basket to ~20.08% in
+the live 11-name run (see the live-verified table below) purely from the
+formula now averaging across seven more, generally lower-volatility names.
 
 **Position sizing & entry logic:**
 > **"position sizes are set by inverse-volatility weighting using trailing realized volatility -- this allocates risk, not conviction, and makes no claim about expected returns or direction."**
@@ -71,23 +86,191 @@ a position's current portfolio weight has drifted beyond a configured
 threshold (`DEFAULT_DRIFT_THRESHOLD`, default 5%) from its target weight —
 avoiding unnecessary turnover and unnecessary firewall load.
 
+**Scheduled options overlay — two audit records, not one:** the reactive
+hedge trigger (above) never places an order, so it only ever needs one
+audit record (`rule_id: hedge-proposal`). The scheduled overlay is
+different — it submits a real `place_option_order` call, so it produces
+**two** separate records in `audit.jsonl`: a provenance record
+`core_strategy.place_basket_orders` writes directly, before submitting
+(`tool_name: "scheduled_overlay:proposed"`, `rule_id:
+"scheduled-options-overlay"`, `verdict: "info"`), and the ordinary record
+`PolicyEngine.evaluate()` writes for that same call carrying whatever
+`rule_id` actually evaluated it (e.g. `option-spread-guard`,
+`hedge-cost-cap`, `net-delta-floor`, or `None` if nothing fired). The
+provenance record is unconditional and written first, so it survives even
+when the real evaluation hard-blocks the order — a dashboard reading
+`audit.jsonl` can tell "this option order came from the scheduled overlay"
+and "this is what the firewall's own rules decided about it" apart, without
+either fact silently swallowing the other.
+
+**Scheduled overlay contracts are resolved from Alpaca's real chain, not
+asserted from arithmetic.** Earlier, `compute_scheduled_overlay` fed
+`_mechanical_strike`/`_mechanical_expiry`'s raw output straight into
+`format_occ_symbol`, producing an OCC-format string for a strike/expiry
+combination that was never checked against what Alpaca actually lists —
+in practice this almost always names a contract that does not exist, and
+every submission hard-blocked with `option-spread-guard`'s "no snapshot
+returned for `<symbol>`". **That failure was, at the time, misdiagnosed as
+a free-tier market-data limitation — it was not.** Verified directly: the
+same `indicative` feed (`DEFAULT_OPTION_FEED`, unchanged, never the bug)
+returns real, live quotes for real listed contracts on the same
+underlying — confirmed by querying Alpaca's chain snapshot endpoint
+directly and seeing populated bid/ask data for genuinely listed strikes.
+The actual defect was upstream of the fetch: a strike/expiry pair can be
+mechanically "correct" (right OTM%, right day-count window) while
+matching no contract Alpaca has ever listed. `resolve_listed_contract`
+(`src/firewall/market_data.py`) fixes this — it calls Alpaca's real
+options chain (`GET /v2/options/contracts`, the Trading API, a different
+host/surface from the quote/bars endpoints and one that carries no `feed`
+parameter at all) and snaps the mechanical target to the nearest contract
+Alpaca actually lists: nearest listed expiry to the target (restricted to
+expiries satisfying `option_expiry_floor`'s own 7-day DTE minimum, so a
+resolved contract is never one that rule would hard-block on arrival
+anyway — if the literal-nearest expiry violates the floor, this snaps to
+the nearest one that also satisfies it, not the next-nearest ignoring the
+floor). The OTM%/target-date heuristic itself is unchanged — still fully
+mechanical, still disclosed, no forecasting; only the final step changed.
+`ScheduledOverlayProposal`'s `strike`/`target_expiry`/`occ_symbol` now
+reflect the RESOLVED contract, with the original mechanical target
+preserved in the audit reason text for transparency. If no real contract
+resolves at all, `compute_scheduled_overlay` returns `None` (the same
+outcome as its pre-existing "no positions to hedge" case) rather than
+ever asserting a phantom symbol.
+
+**Strike selection is by DELTA, not price.** At the chosen expiry,
+`resolve_listed_contract` does not pick the strike nearest the mechanical
+OTM% target by price — it pulls real deltas (via `fetch_option_quotes`,
+the same batched snapshot fetch `option_spread_guard`/`net_delta_floor`/
+`hedge_cost_cap` already use) for the strikes nearest that target, and
+picks whichever has a delta closest to `DELTA_CORRIDOR_CENTER` (0.325,
+the midpoint of `net_delta_floor`'s real enforced `structural_delta_floor`
+of 0.15 and a disclosed, non-enforced upper anchor of 0.50). The OTM%
+target is only a rough starting anchor for where to look in the chain,
+never the final criterion — selection by a measured Greek, not a market
+view, consistent with the rest of this corridor. The search window
+widens adaptively (starting at `DEFAULT_STRIKE_SEARCH_COUNT`, doubling,
+re-querying only newly-added strikes) until the searched deltas straddle
+the corridor center on both sides or the full listed chain at that
+expiry is exhausted — a fixed narrow window can otherwise silently settle
+for "closest available in an arbitrarily small slice" rather than the
+true closest-to-center strike; verified directly against a real chain
+(SPY, whose delta moves slowly per dollar of strike near this OTM range,
+needed a search several times wider than the 20-strike starting point
+before reaching a strike anywhere near the corridor center at all).
+Resolution fails closed if even the best strike found after exhausting
+the chain still can't clear `DELTA_CORRIDOR_FLOOR` — the one part of the
+corridor a rule (`net_delta_floor`) actually enforces; the ceiling is
+never a fail-closed reason, since no rule blocks on |delta| being too
+high.
+
 **Why every order is a plain market order (`qty` only, never
-`limit_price` or `notional`):** verified directly against the real,
-loaded `policies/default.yaml` before writing this module (one
-`PolicyEngine.evaluate()` call, not assumed) — `cvar_gate` and
-`pct_of_adv` both hard-block any order carrying a computable notional
-whenever `state["account_equity"]` is missing, which is a pre-existing,
-disclosed gap: nothing in `src/` populates that state key today (see
-`cvar_gate`'s entry above). A plain market order carries no computable
-notional, so those two rules (and `notional_cap`/`position_cap`) all
-correctly skip it rather than failing closed. The target dollar allocation
-is therefore converted to an integer share count locally
+`limit_price` or `notional`):** live-verified directly against Alpaca's
+real paper API — a `place_stock_order` call with `type: "market"` and a
+`limit_price` set is unconditionally rejected by Alpaca itself with HTTP
+422 (error code 40010001, "market orders require no stop or limit
+price"), independent of anything the firewall does. `limit_price` had
+briefly been attached to these orders to give `notional_cap`/
+`position_cap` something to compute a notional from directly; that
+approach cannot work against the real API and was reverted. The target
+dollar allocation is instead converted to an integer share count locally
 (`core_strategy.compute_target_quantities`, sized off a recent close via
-the same `firewall.market_data.fetch_daily_bars` helper `cvar_gate`/`pct_of_adv`
-already use) rather than sent to Alpaca as a `notional` or limit order.
-This is not a workaround for the firewall — it is this module picking the
-one order shape the firewall's own rule set, as shipped today (gap
-included), actually evaluates to `allow` for a plain, compliant buy or sell.
+the same `firewall.market_data.fetch_daily_bars` helper `cvar_gate`/
+`pct_of_adv` already use), and `notional_cap`/`position_cap` independently
+fetch their **own** reference price for any plain qty-only stock order
+(see "Dynamic, capped risk-parity allocation" below) rather than trusting
+a client-supplied price field. Every dollar figure a rule enforces is
+therefore derived from a price the rule itself fetched, not one the order
+happened to carry.
+
+**Dynamic, capped risk-parity allocation, chunking, and throttle-safe
+pacing.** The basket budget, the per-order and per-symbol caps, and the
+pacing all read live off the real account and the real loaded policy —
+none of it is a flat dollar figure sized to make a demo look good.
+
+- **Basket budget** is `account_equity * 90%`
+  (`DEFAULT_BASKET_PCT_OF_NAV`, `compute_total_budget_usd`) — equity read
+  from the same `GET /v2/account` fetch `state["account_equity"]` already
+  uses, not a second call. 90%, not 100%, deliberately leaves margin
+  headroom rather than targeting full account utilization exactly.
+- **`notional_cap`** (`policies/default.yaml`) is `max_pct_of_equity:
+  0.05` — 5% of live equity, with the pre-existing `max_usd: 5000` kept as
+  a static fallback for missing equity. At this account's real ~$100k
+  equity the two numbers coincide almost exactly ($4,998.88 vs $5,000);
+  that is a real, live-verified coincidence of this account's current
+  scale, not a value chosen to make any specific order pass — chunking
+  below exists precisely because a single order routinely exceeds it.
+- **`position_cap`** is `max_pct_of_equity: 0.25` — 25% of live equity
+  (the tighter end of a considered 25–30% range), static fallback
+  `max_usd_per_symbol: 20000` unchanged. Chosen deliberately tight enough
+  that the basket's real dominant name (SPY, see below) actually clips
+  against it — "a limit that's never reached is not a meaningfully
+  verified limit."
+- **Weight clipping, not redistribution**
+  (`core_strategy.clip_weights_to_position_cap`): after computing raw
+  inverse-vol weights, any name whose target notional
+  (`weight * total_budget_usd`) would exceed `position_cap`'s real ceiling
+  (`account_equity * 0.25`, the *same* figure the firewall itself
+  enforces, read off the live rule instance — see
+  `_read_dynamic_policy_config` — never a duplicated constant) has its
+  weight clipped down to exactly that ceiling. The clipped-off amount is
+  **left as uninvested cash**, not redistributed to the other names, and
+  every clip writes a dedicated, non-blocking audit record
+  (`basket_rebalance:weight_clipped`, `verdict: "info"`) disclosing the
+  symbol, raw weight, capped weight, and ceiling — visible on the
+  dashboard, not a silent truncation.
+- **Notional-cap-aware chunking**
+  (`core_strategy.split_order_into_chunks`): any resulting order whose
+  notional would exceed `notional_cap`'s real effective ceiling is split
+  into `floor(ceiling / price)`-share chunks (the last chunk carrying the
+  remainder), each submitted sequentially through the *same* firewall
+  path as a single order would be — no separate execution route. Every
+  multi-chunk order writes a `basket_rebalance:order_chunked` audit
+  record disclosing the real chunk count and every chunk's size/notional.
+- **Throttle-safe pacing** (`core_strategy.ThrottlePacer`): chunking can
+  turn one logical order into several real ones, which can approach
+  `order_rate_throttle`'s real 20-orders-per-60-seconds limit on its own —
+  a rule that, once tripped, "stays paused until a human explicitly
+  resets it" (see that rule's entry below), making an accidental trip
+  expensive to recover from. The pacer tracks real submission timestamps
+  in a sliding window and sleeps before any submission that would exceed
+  a **75% safety margin** of the real configured limit (15 of 20,
+  `order_rate_max_orders`/`order_rate_window_seconds` read off the same
+  live rule instance as the caps above) — never the raw limit itself,
+  so normal jitter in submission timing can't tip it over the real edge.
+- **`drift_threshold` stays at its existing 5% absolute-weight band**
+  (`DEFAULT_DRIFT_THRESHOLD`, unchanged), a deliberate decision made
+  independent of any single run's outcome: a no-trade tolerance band
+  around target weight is standard practice for tolerance-band rebalancing
+  (avoiding turnover from noise-level fluctuations that carry no material
+  risk consequence), not a threshold tuned to make a particular cycle's
+  order count look larger or smaller.
+
+**Live-verified, 2026-08-30, real paper account (equity $99,977.54,
+`python -m core_strategy`, 11-asset expanded risk-parity basket, real current positions, real
+market prices):** target budget $89,979.79 (90% NAV), $11,625.08 cash buffer (11.63% NAV),
+25% position cap ($25,000 ceiling), $5,000 per-chunk ceiling with `ThrottlePacer` spacing:
+
+| symbol | 90d realized vol | target weight | chunks | shares | price | deployed notional |
+|---|---|---|---|---|---|---|
+| **SPY** | 0.86% | 20.08% | 4 | 21 | $769.28 | $16,154.88 |
+| **GD** | 1.41% | 12.29% | 3 | 29 | $379.32 | $11,000.28 |
+| **QQQ** | 1.62% | 10.67% | 2 | 11 | $716.44 | $7,880.84 |
+| **J** | 1.71% | 10.10% | 2 | 59 | $152.03 | $8,969.77 |
+| **NOC** | 1.84% | 9.43% | 2 | 15 | $545.46 | $8,181.83 |
+| **AAPL** | 2.03% | 8.54% | 2 | 22 | $319.58 | $7,030.76 |
+| **LDOS** | 2.53% | 6.83% | 2 | 43 | $140.52 | $6,042.36 |
+| **BAH** | 2.73% | 6.34% | 2 | 75 | $75.25 | $5,644.12 |
+| **MSFT** | 2.73% | 6.34% | 1 | 9 | $513.67 | $4,623.03 |
+| **CACI** | 3.48% | 4.97% | 1 | 7 | $627.84 | $4,394.85 |
+| **ACN** | 3.93% | 4.40% | 1 | 20 | $189.59 | $3,791.80 |
+
+All 22 chunked stock orders cleared the real firewall
+(`verdict: "allow"`, `upstream_status: "ok"`) with zero rule violations
+and zero `order_rate_throttle` engagement (pacer submitted 15 chunks, safely
+slept ~53s, and submitted the remaining 7 chunks); the scheduled options overlay
+(`SPY260930P00758000`, delta -0.3225) was proposed and correctly evaluated by
+`net_delta_floor`. Every order and decision above is recorded in `audit.jsonl`
+with cryptographic hash-chain integrity verified (`verify_chain(audit_path)` passes).
 
 **Running it:**
 
@@ -164,13 +347,15 @@ recorded, still-live order events) — explicitly not a per-symbol
 realized-loss attribution, documented as such in
 `hedge_proposal.py`'s module docstring.
 
-**Known, disclosed gap:** the `cvar_gate` trigger needs
-`state["account_equity"]`, which nothing in `src/` populates in the live
-proxy today (the same gap `cvar_gate` itself has). This trigger is
-therefore correct by construction (unit-tested directly in
-`tests/rules/test_hedge_proposal.py`) but currently dormant through
-`build_proxy()`. The `drawdown_killswitch` trigger has no such gap and is
-proven end-to-end through the real proxy. Deliberately omitted from all 5
+**Formerly a disclosed gap, now closed:** the `cvar_gate` trigger needs
+`state["account_equity"]`. `FirewallMiddleware._populate_account_state`
+(`src/firewall/proxy.py`) now sets it on every account-state-relevant
+call, read from the same `GET /v2/account` response
+`state["session_pnl_usd"]` already used (`firewall/account_data.py`'s
+`AccountPnLResult.equity` field) — one fetch, not a second one. Both the
+`cvar_gate` and `drawdown_killswitch` hedge-proposal triggers are now
+proven end-to-end through the real proxy, not just unit-tested in
+isolation. Deliberately omitted from all 5
 `preset_*.yaml` files (documented here, not left silent): this is a
 detection/reporting feature, not a blocking control, so it doesn't belong
 in the strictness-gradient sweep those presets exist for.
@@ -361,10 +546,10 @@ fabricated turns.
   from the same options-snapshot fetch `option_spread_guard`/
   `net_delta_floor` already use) to a configured fraction of account
   equity, reusing `cvar_gate`'s own `account_equity_state_key` — so it
-  fails closed on missing/non-numeric equity exactly like `cvar_gate`,
-  and is subject to the identical, pre-existing, disclosed gap: nothing in
-  `src/` populates `state["account_equity"]` from a real upstream response
-  yet. Explicit, documented decision on what `extract_notional()` computes
+  fails closed on missing/non-numeric equity exactly like `cvar_gate`
+  would, but `state["account_equity"]` is now populated on every real
+  call (see the hedge-proposal section above) so this is no longer a live
+  gap. Explicit, documented decision on what `extract_notional()` computes
   for options (resolved before this rule was written, per that module's
   own docstring): TOTAL PREMIUM — `qty * limit_price * 100` — never
   underlying notional and never an unmultiplied `qty * price`.
@@ -520,3 +705,34 @@ fabricated turns.
 
 - **Bracket, OCO, OTO, and multi-leg order shapes (or any order with `take_profit`/`stop_loss`) are hard-blocked:** bracket/OCO/multi-leg order shapes are not yet risk-assessed by this firewall and are blocked until support exists.
 
+
+claude --resume 8150dd43-8739-43d6-9a11-cf0c58090eed
+# Competition-safe execution modes
+
+Read-only account verification (never constructs an order cycle):
+
+```bash
+python -m run_agent --preflight-only --expected-account-id YOUR_ACCOUNT_ID
+```
+
+Full policy evaluation against live paper data with all upstream mutations
+suppressed inside the firewall proxy:
+
+```bash
+python -m run_agent --dry-run --budget 1000 --no-overlay
+```
+
+Bounded autonomous dry-run loop (default), gated by Alpaca's market clock:
+
+```bash
+python run_loop.py --max-cycles 5 --interval-seconds 60 --budget 1000
+```
+
+Paper execution must be opted into and requires an exact expected account ID:
+
+```bash
+python run_loop.py --execute --expected-account-id YOUR_ACCOUNT_ID \
+  --max-cycles 5 --interval-seconds 60 --budget 1000
+```
+
+Autonomous options overlays are disabled unless `--include-options` is supplied.

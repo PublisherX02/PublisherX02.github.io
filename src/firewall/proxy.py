@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from fastmcp import Client, FastMCP
+from fastmcp.tools import ToolResult
 from fastmcp.client.transports import UvxStdioTransport
 from fastmcp.exceptions import PromptError, ResourceError, ToolError
 from fastmcp.server import create_proxy
@@ -49,17 +50,23 @@ from firewall.rules.drawdown_killswitch import DrawdownKillswitchRule
 from firewall.rules.hedge_proposal import HedgeProposalRule
 
 AccountPnLFetcher = Callable[[], "account_data.AccountPnLResult"]
+PositionsFetcher = Callable[[], "account_data.PositionsResult"]
+OpenOrdersFetcher = Callable[[dict[str, float]], "account_data.OpenOrdersResult"]
 
 # Deliberately the same "order"-substring pattern as drawdown_killswitch's
 # own default tool_match (policies/default.yaml's drawdown-killswitch:
-# tool_match: ["order"]), not a narrower place/replace-only list: this gate
-# exists to skip the fetch for calls no rule with this data could ever
-# consult it on (get_account_info, close_position, ...), and matching the
-# rule's own reach exactly -- including read-only order queries like
-# get_orders, which also contain "order" and so still trigger a fetch --
-# is more defensible than a gate that disagrees with the rule it serves. A
-# few wasted fetches on read-only order calls is the accepted cost of that.
-_SESSION_PNL_RELEVANT_TOOLS = ("order",)
+# tool_match: ["order"]) -- also cvar_gate/pct_of_adv/hedge_cost_cap's own
+# tool_match: ["order"], now that this same fetch also populates
+# account_equity for them. Not a narrower place/replace-only list: this
+# gate exists to skip the fetch for calls no rule with this data could ever
+# consult it on (get_account_info, close_position, ...), and matching every
+# consuming rule's own reach exactly -- including read-only order queries
+# like get_orders, which also contain "order" and so still trigger a fetch
+# -- is more defensible than a gate that disagrees with the rules it
+# serves. A few wasted fetches on read-only order calls is the accepted
+# cost of that.
+_ACCOUNT_STATE_RELEVANT_TOOLS = ("order",)
+_MUTATING_TOOL_PATTERNS = ("place_", "replace_", "cancel_", "close_position", "close_all_positions")
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_POLICY_PATH = REPO_ROOT / "policies" / "default.yaml"
@@ -202,19 +209,27 @@ class FirewallMiddleware(Middleware):
     order_rate_throttle/wash_trade_detector/place_cancel_ratio/
     layering_detector, which previously saw a permanently-empty history no
     matter how many orders were placed (see AUDIT.md findings E3/E4).
-    `session_pnl_usd` (drawdown_killswitch) is now fetched fresh from
-    Alpaca's own account state on each order-related call (see
-    `account_data.fetch_session_pnl`, and its module docstring for why:
+    `session_pnl_usd` (drawdown_killswitch) and `account_equity`
+    (cvar_gate/pct_of_adv/hedge_cost_cap) are now both fetched fresh from
+    Alpaca's own account state on each order-related call, from the SAME
+    GET /v2/account round trip (see `account_data.fetch_session_pnl`,
+    `AccountPnLResult.equity`, and `_populate_account_state` above --
     reusing Alpaca's own equity/last_equity computation rather than
-    re-deriving PnL locally from fills). `pnl_history` (cooldown_after_loss's
-    windowed *realized* P&L) and `account_equity`/`positions`
-    (cvar_gate/pct_of_adv/position_cap) are still not populated from real
-    upstream responses -- for `pnl_history` specifically, this was a
-    deliberate decision, not an oversight: Alpaca's account endpoints don't
-    cleanly expose a windowed, realized-only P&L series (see
-    `account_data`'s module docstring for what was checked and ruled out).
-    Those rules still correctly fail closed (cvar_gate/pct_of_adv) or
-    silently never trip (cooldown_after_loss) as documented in AUDIT.md.
+    re-deriving PnL locally from fills, and reusing that one fetch for both
+    state keys rather than a second call). `positions` (position_cap) is
+    now also fetched fresh on each order-related call, from a separate GET
+    /v2/positions round trip (see `account_data.fetch_positions` and
+    `_populate_positions` above) -- `positions_fetched_at` is set alongside
+    it so position_cap can reconcile same-symbol orders it already approved
+    earlier in a fast burst (e.g. several chunks of one rebalance) that the
+    fetched snapshot hasn't caught up to yet (see position_cap.py's own
+    "CROSS-CHUNK EXPOSURE" docstring section). `pnl_history`
+    (cooldown_after_loss's windowed *realized* P&L) is still not populated
+    from a real upstream response -- a deliberate decision, not an
+    oversight: Alpaca's account endpoints don't cleanly expose a windowed,
+    realized-only P&L series (see `account_data`'s module docstring for what
+    was checked and ruled out) -- so `cooldown_after_loss` still silently
+    never trips, as documented in AUDIT.md.
 
     Also calls `hedge_proposal.compute_proposal` directly after every
     `evaluate()` (see `_propose_hedge_if_triggered`), independent of that
@@ -233,8 +248,16 @@ class FirewallMiddleware(Middleware):
         account_pnl_fetcher: AccountPnLFetcher | None = None,
         session_pnl_timeout_seconds: float = account_data.DEFAULT_TIMEOUT_SECONDS,
         session_pnl_cache_ttl_seconds: float = account_data.DEFAULT_CACHE_TTL_SECONDS,
+        positions_fetcher: PositionsFetcher | None = None,
+        open_orders_fetcher: OpenOrdersFetcher | None = None,
+        positions_timeout_seconds: float = account_data.DEFAULT_TIMEOUT_SECONDS,
+        positions_cache_ttl_seconds: float = account_data.DEFAULT_CACHE_TTL_SECONDS,
+        is_real_upstream: bool = True,
+        dry_run: bool = False,
     ) -> None:
         self.policy_engine = policy_engine
+        self.is_real_upstream = is_real_upstream
+        self.dry_run = dry_run
         self._order_history = OrderHistory()
         self._pnl_history = PnLHistory()
         self._account_pnl_fetcher: AccountPnLFetcher = account_pnl_fetcher or (
@@ -242,6 +265,28 @@ class FirewallMiddleware(Middleware):
                 timeout_seconds=session_pnl_timeout_seconds,
                 cache_ttl_seconds=session_pnl_cache_ttl_seconds,
             )
+        )
+        self._positions_fetcher: PositionsFetcher = positions_fetcher or (
+            (
+                lambda: account_data.fetch_positions(
+                    timeout_seconds=positions_timeout_seconds,
+                    cache_ttl_seconds=positions_cache_ttl_seconds,
+                )
+            )
+            if is_real_upstream
+            else (lambda: account_data.PositionsResult(
+                ok=True, positions={}, quantities={}, current_prices={}, fetched_at=0.0
+            ))
+        )
+        self._open_orders_fetcher: OpenOrdersFetcher = open_orders_fetcher or (
+            account_data.fetch_open_orders
+            if is_real_upstream
+            else (lambda prices: account_data.OpenOrdersResult(
+                ok=True, orders=(), aggregate_outstanding_notional=0.0
+            ))
+        )
+        self._exposure_authoritative = (
+            is_real_upstream or (positions_fetcher is not None and open_orders_fetcher is not None)
         )
         self._hedge_rule = self._find_rule("hedge-proposal", HedgeProposalRule)
         self._cvar_gate_rule = self._find_rule("cvar-gate", CVaRGateRule)
@@ -466,37 +511,86 @@ class FirewallMiddleware(Middleware):
             tool_name, arguments, now=now, outcome=outcome, order_id=order_id
         )
 
-    def _populate_session_pnl(self, state: dict[str, Any]) -> None:
-        """Fetch today's session P&L from Alpaca and set
-        `state["session_pnl_usd"]` (drawdown_killswitch's input) if it
-        succeeds.
+    def _populate_account_state(self, state: dict[str, Any]) -> None:
+        """Fetch today's account state from Alpaca (one GET /v2/account call,
+        via `self._account_pnl_fetcher`) and set both `state["session_pnl_usd"]`
+        (drawdown_killswitch's input) and `state["account_equity"]`
+        (cvar_gate/pct_of_adv/hedge_cost_cap's `account_equity_state_key`)
+        if it succeeds -- the same fetch/cache feeds both, not two separate
+        round trips (see `account_data.AccountPnLResult.equity`'s own
+        comment).
 
-        On failure, `session_pnl_usd` is left absent -- drawdown_killswitch
-        already treats a missing value as "can't assess" and does not trip
+        On failure, both are left absent -- drawdown_killswitch already
+        treats a missing session_pnl_usd as "can't assess" and does not trip
         (a separate, pre-existing defect tracked in AUDIT.md's E3 finding,
-        not addressed here). What *is* addressed here: the failure itself
-        is written to the audit log as a soft_block, so "no PnL data was
-        available for this call" is a visible, queryable event rather than
-        an invisible skip -- an operator (or a later rule) can tell that
-        apart from "PnL data said we're fine."
+        not addressed here); cvar_gate/pct_of_adv/hedge_cost_cap already
+        fail CLOSED (hard_block) on a missing account_equity, the opposite
+        posture, by their own design (see each rule's module docstring).
+        What *is* addressed here: the failure itself is written to the audit
+        log as a soft_block, so "no account data was available for this
+        call" is a visible, queryable event rather than an invisible skip --
+        an operator (or a later rule) can tell that apart from "account data
+        said we're fine."
         """
         result = self._account_pnl_fetcher()
         if result.ok:
             state["session_pnl_usd"] = result.session_pnl_usd
+            if result.equity is not None:
+                state["account_equity"] = result.equity
             return
 
         if self.policy_engine.audit_writer is not None:
             self.policy_engine.audit_writer.append(
-                tool_name="session_pnl:fetch_failed",
+                tool_name="account_state:fetch_failed",
                 arguments={},
                 verdict="soft_block",
                 reason=(
-                    f"could not fetch session_pnl_usd from Alpaca: {result.reason} "
-                    "-- drawdown_killswitch cannot assess this call and will not trip"
+                    f"could not fetch account state from Alpaca: {result.reason} -- "
+                    "drawdown_killswitch cannot assess this call and will not trip; "
+                    "cvar_gate/pct_of_adv/hedge_cost_cap will hard-block on missing "
+                    "account_equity (fail closed, by design)"
                 ),
                 forwarded=False,
                 upstream_status="not_forwarded",
-                rule_id="account_pnl_fetch",
+                rule_id="account_data_fetch",
+                regulation_ref=None,
+            )
+
+    def _populate_positions(self, state: dict[str, Any]) -> None:
+        """Fetch current per-symbol USD exposure from Alpaca (GET
+        /v2/positions, via `self._positions_fetcher`) and set both
+        `state["positions"]` and `state["positions_fetched_at"]`
+        (position_cap's `positions_state_key`/`positions_fetched_at_key`)
+        on success.
+
+        A separate fetch from `_populate_account_state` above (a different
+        Alpaca endpoint, not a reuse of the same round trip). On failure,
+        both are left absent -- position_cap already treats a missing
+        `positions` entry as zero prior exposure (fails OPEN, not closed,
+        by its own pre-existing design: see position_cap.py), so a fetch
+        failure here degrades to "can't see prior exposure," not a hard
+        block. The failure is still written to the audit log for
+        visibility, same convention as `_populate_account_state`.
+        """
+        result = self._positions_fetcher()
+        if result.ok:
+            state["positions"] = result.positions
+            state["positions_fetched_at"] = result.fetched_at
+            return
+
+        if self.policy_engine.audit_writer is not None:
+            self.policy_engine.audit_writer.append(
+                tool_name="positions:fetch_failed",
+                arguments={},
+                verdict="soft_block",
+                reason=(
+                    f"could not fetch positions from Alpaca: {result.reason} -- "
+                    "position_cap cannot see prior exposure for this call and will "
+                    "treat it as zero (fails open on missing positions, by design)"
+                ),
+                forwarded=False,
+                upstream_status="not_forwarded",
+                rule_id="account_data_fetch",
                 regulation_ref=None,
             )
 
@@ -514,8 +608,16 @@ class FirewallMiddleware(Middleware):
             "order_history": self._order_history,
             "pnl_history": self._pnl_history,
         }
-        if matches_any(tool_name, _SESSION_PNL_RELEVANT_TOOLS):
-            self._populate_session_pnl(state)
+        if matches_any(tool_name, _ACCOUNT_STATE_RELEVANT_TOOLS):
+            self._populate_account_state(state)
+            self._populate_positions(state)
+        if tool_name == "place_stock_order":
+            state["exposure_snapshot"] = account_data.fetch_consistent_exposure_snapshot(
+                {},
+                positions_fetcher=self._positions_fetcher,
+                open_orders_fetcher=self._open_orders_fetcher,
+            )
+            state["exposure_snapshot"]["authoritative"] = self._exposure_authoritative
         self._check_hedge_normalization(state)
         verdict = self.policy_engine.evaluate(tool_name, arguments, state)
         self._propose_hedge_if_triggered(tool_name, arguments, state)
@@ -536,12 +638,49 @@ class FirewallMiddleware(Middleware):
         # surfaced.
         pending = self.policy_engine.record_call_pending(tool_name, arguments, verdict)
 
+        # Dry-run is enforced inside the last component before upstream, not
+        # merely in the CLI. Read-only calls still reach Alpaca; every known
+        # mutation is evaluated by policy and then terminated here.
+        if self.dry_run and matches_any(tool_name, _MUTATING_TOOL_PATTERNS):
+            dry_run_result = {
+                "id": f"dry-run-{arguments.get('client_order_id', uuid.uuid4().hex)}",
+                "client_order_id": arguments.get("client_order_id"),
+                "status": "dry_run",
+            }
+            self.policy_engine.record_call_outcome(
+                tool_name,
+                arguments,
+                verdict,
+                forwarded=False,
+                upstream_status="not_forwarded",
+                pending=pending,
+            )
+            dry_run_json = json.dumps(dry_run_result)
+            return ToolResult(
+                content=[TextContent(
+                    type="text",
+                    text=json.dumps({"result": dry_run_json}),
+                )],
+                structured_content={"result": dry_run_json},
+            )
+
         # A tool that raises inside its own handler surfaces here as a normal
         # (non-raising) ToolResult with is_error=True -- that's standard MCP
         # wire behavior, not a transport failure -- so upstream_status is read
         # off the result, not inferred from exception propagation. The
         # try/except below is a defensive fallback for genuine transport-level
         # exceptions (e.g. the upstream subprocess dying mid-call).
+        # Normalize qty -> quantity for official alpaca-mcp-server schema compatibility
+        if self.is_real_upstream and isinstance(context.message.arguments, dict):
+            if "qty" in context.message.arguments and "quantity" not in context.message.arguments:
+                try:
+                    context.message.arguments["quantity"] = int(float(context.message.arguments["qty"]))
+                except (ValueError, TypeError):
+                    pass
+
+        if isinstance(context.message.arguments, dict):
+            context.message.arguments.pop("_firewall_reconciliation", None)
+
         try:
             result = await call_next(context)
         except Exception:
@@ -715,9 +854,12 @@ def _alpaca_client(policy_engine: PolicyEngine) -> Client:
     _check_paper_key_prefix_heuristic(policy_engine)
     transport = UvxStdioTransport(
         tool_name="alpaca-mcp-server",
+        tool_args=["serve"],
+        with_packages=["fastmcp<2"],
         env_vars={
             "ALPACA_API_KEY": os.environ.get("ALPACA_API_KEY", ""),
             "ALPACA_SECRET_KEY": os.environ.get("ALPACA_SECRET_KEY", ""),
+            "ALPACA_PAPER_TRADE": os.environ.get("ALPACA_PAPER_TRADE", "true"),
         },
     )
     return Client(transport)
@@ -728,6 +870,9 @@ def build_proxy(
     policy_engine: PolicyEngine | None = None,
     *,
     account_pnl_fetcher: AccountPnLFetcher | None = None,
+    positions_fetcher: PositionsFetcher | None = None,
+    open_orders_fetcher: OpenOrdersFetcher | None = None,
+    dry_run: bool = False,
 ) -> FastMCP:
     """Build the firewall proxy wired to `backend`.
 
@@ -746,6 +891,11 @@ def build_proxy(
     TIMEOUT_SECONDS`/`FIREWALL_SESSION_PNL_CACHE_TTL_SECONDS` (or
     `account_data`'s own defaults) -- tests pass a fake fetcher instead so
     they never make a real network call and never need those env vars.
+
+    `positions_fetcher` defaults to `account_data.fetch_positions` (its own
+    defaults, no dedicated env vars yet -- position_cap's positions state
+    is new; add env-tunable timeout/TTL here if that's ever needed) -- same
+    reasoning as `account_pnl_fetcher` for why tests pass a fake one.
     """
     engine = policy_engine if policy_engine is not None else _default_policy_engine()
     target = backend if backend is not None else _alpaca_client(engine)
@@ -756,6 +906,10 @@ def build_proxy(
             account_pnl_fetcher=account_pnl_fetcher,
             session_pnl_timeout_seconds=_session_pnl_timeout_seconds(),
             session_pnl_cache_ttl_seconds=_session_pnl_cache_ttl_seconds(),
+            positions_fetcher=positions_fetcher,
+            open_orders_fetcher=open_orders_fetcher,
+            is_real_upstream=(backend is None),
+            dry_run=dry_run,
         )
     )
     return proxy

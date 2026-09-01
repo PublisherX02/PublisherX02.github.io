@@ -9,15 +9,35 @@ from __future__ import annotations
 import logging
 import uuid
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Callable, Literal
 
 import yaml
 from pydantic import BaseModel
 
 from firewall.audit import AuditEvent, AuditLogWriter, UpstreamStatus, compute_record_hash
+from firewall.market_data import BarsResult
 from firewall.rules import RULE_TYPES, Rule, RuleConfig
+from firewall.rules.cvar_gate import CVaRGateRule
+from firewall.rules.notional_cap import NotionalCapRule
+from firewall.rules.pct_of_adv import PctOfAdvRule
+from firewall.rules.position_cap import PositionCapRule
 
 logger = logging.getLogger(__name__)
+
+BarsFetcher = Callable[[str, int], BarsResult]
+
+# Rule classes whose __init__ accepts a `bars_fetcher` kwarg (all four
+# fetch historical daily bars via the same shared firewall.market_data.
+# fetch_daily_bars helper, defaulting to the real one when none is given).
+# Explicit set, not introspection: matches this codebase's existing
+# `matches_any`-style convention of stating exactly what's covered rather
+# than inferring it from a method signature.
+_BARS_FETCHER_AWARE_RULE_TYPES: tuple[type[Rule], ...] = (
+    CVaRGateRule,
+    PctOfAdvRule,
+    NotionalCapRule,
+    PositionCapRule,
+)
 
 
 class PolicyConfig(BaseModel):
@@ -96,8 +116,24 @@ class PolicyEngine:
 
     @classmethod
     def from_yaml(
-        cls, path: Path | str, audit_writer: AuditLogWriter | None = None
+        cls,
+        path: Path | str,
+        audit_writer: AuditLogWriter | None = None,
+        bars_fetcher: BarsFetcher | None = None,
     ) -> "PolicyEngine":
+        """`bars_fetcher`, when given, is passed to every constructed rule
+        whose class is in `_BARS_FETCHER_AWARE_RULE_TYPES` (cvar_gate,
+        pct_of_adv, notional_cap, position_cap) -- a single shared
+        injection point so a test (or a future caller) can supply one fake
+        historical-bars source for every market-data-dependent rule at
+        once, instead of monkeypatching each rule module's own imported
+        `fetch_daily_bars` name separately. Rule classes not in that set
+        are constructed exactly as before (`rule_cls(rule_config)`),
+        regardless of this argument. `None` (the default) means every
+        bars-aware rule falls back to its own default -- the real
+        `firewall.market_data.fetch_daily_bars` -- unchanged from before
+        this parameter existed.
+        """
         path = Path(path)
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         config = PolicyConfig.model_validate(raw)
@@ -112,7 +148,10 @@ class PolicyEngine:
                     f"Known types: {sorted(RULE_TYPES)}"
                 )
             rule_config = RuleConfig.model_validate(rule_dict)
-            rules.append(rule_cls(rule_config))
+            if bars_fetcher is not None and rule_cls in _BARS_FETCHER_AWARE_RULE_TYPES:
+                rules.append(rule_cls(rule_config, bars_fetcher=bars_fetcher))
+            else:
+                rules.append(rule_cls(rule_config))
 
         return cls(rules=rules, version=config.version, audit_writer=audit_writer)
 

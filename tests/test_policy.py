@@ -22,7 +22,40 @@ def test_from_yaml_loads_default_policy():
     engine = PolicyEngine.from_yaml("policies/default.yaml")
 
     assert engine.version
-    assert len(engine.rules) == 21
+    assert len(engine.rules) == 22
+
+
+def test_from_yaml_bars_fetcher_reaches_every_bars_aware_rule():
+    """The shared bars_fetcher injection point (policy.py's
+    _BARS_FETCHER_AWARE_RULE_TYPES) must reach cvar_gate, pct_of_adv,
+    notional_cap, and position_cap -- all four fetch historical bars via
+    the same shared firewall.market_data.fetch_daily_bars helper, and a
+    caller supplying one fake fetcher should not have to also monkeypatch
+    each rule module's own imported name separately."""
+
+    def fake_bars_fetcher(symbol, lookback_days, **kwargs):
+        return BarsResult(ok=True, bars=[DailyBar(close=1.0, volume=1.0)])
+
+    engine = PolicyEngine.from_yaml("policies/default.yaml", bars_fetcher=fake_bars_fetcher)
+
+    bars_aware = {CVaRGateRule, PctOfAdvRule, NotionalCapRule}
+    from firewall.rules.position_cap import PositionCapRule
+
+    bars_aware.add(PositionCapRule)
+
+    checked = 0
+    for rule in engine.rules:
+        if type(rule) in bars_aware:
+            assert rule._bars_fetcher is fake_bars_fetcher
+            checked += 1
+    assert checked == len(bars_aware), "expected exactly one instance of each bars-aware rule"
+
+
+def test_from_yaml_without_bars_fetcher_rules_use_their_own_default():
+    engine = PolicyEngine.from_yaml("policies/default.yaml")
+
+    cvar_rule = next(r for r in engine.rules if isinstance(r, CVaRGateRule))
+    assert cvar_rule._bars_fetcher == cvar_rule._fetch_bars
 
 
 def test_gtc_order_hard_blocked_with_correct_reason_even_without_account_equity():
@@ -68,7 +101,7 @@ def test_near_dated_single_leg_option_order_hits_expiry_floor_not_allowlist():
         # AAPL is on the default allowlist, but as an OCC string it would
         # never match -- 2026-08-04 is 3 calendar days from `now`, inside
         # the default 7-day floor.
-        {"symbol": "AAPL260804P00220000", "side": "buy", "qty": "1"},
+        {"symbol": "AAPL260804P00220000", "side": "buy", "qty": "1", "limit_price": "5.00"},
         {"now": now},
     )
 
@@ -126,6 +159,7 @@ def test_wide_spread_single_leg_market_order_hits_spread_guard_not_allowlist():
                 "side": "buy",
                 "qty": "1",
                 "type": "market",
+                "limit_price": "1.00",
             },
             {},
         )
@@ -212,7 +246,7 @@ def test_option_sell_order_hits_sell_guard_regardless_of_origin():
 
     verdict = engine.evaluate(
         "place_option_order",
-        {"symbol": "AAPL991231P00220000", "side": "sell", "qty": "1"},
+        {"symbol": "AAPL991231P00220000", "side": "sell", "qty": "1", "limit_price": "5.00"},
         {},
     )
 
@@ -335,7 +369,7 @@ def test_call_buy_hits_regime_guard_when_state_is_wired(monkeypatch):
 
     verdict = engine.evaluate(
         "place_option_order",
-        {"symbol": "AAPL991218C00150000", "side": "buy", "qty": "1"},
+        {"symbol": "AAPL991218C00150000", "side": "buy", "qty": "1", "limit_price": "5.00"},
         {
             "session_pnl_usd": -5000.0,  # well past drawdown-killswitch's default -1000 threshold
             "order_history": history,

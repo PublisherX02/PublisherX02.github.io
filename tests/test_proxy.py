@@ -24,12 +24,40 @@ from firewall.rules.base import RuleConfig
 from firewall.rules.cvar_gate import CVaRGateRule
 
 
-def _real_policy_engine(tmp_path):
+def _default_test_bars_fetcher(symbol, lookback_days, **kwargs):
+    """Hermetic stand-in for firewall.market_data.fetch_daily_bars -- flat
+    $100 closes, real-looking volume. notional_cap/position_cap's
+    reference-price fallback (see notional_cap.py's module docstring)
+    fetches bars for any qty-only place_stock_order call reaching them; a
+    module elsewhere in this suite (core_strategy.py, imported by
+    test_core_strategy.py) calls `load_dotenv()` at import time, which
+    leaks real Alpaca credentials into this whole pytest PROCESS once that
+    module is collected -- so without this default, whether these tests
+    hit the real live Alpaca API (or fail closed on missing credentials)
+    would depend on test collection order, not on anything these tests
+    actually declare. This default makes the outcome independent of that."""
+    from firewall.market_data import BarsResult, DailyBar
+
+    return BarsResult(
+        ok=True,
+        bars=[DailyBar(close=100.0, volume=1_000_000.0) for _ in range(max(lookback_days, 1))],
+    )
+
+
+def _real_policy_engine(tmp_path, bars_fetcher=None):
     """The real, unmodified default.yaml policy, wired to a tmp_path audit
-    log -- never the old proof-of-concept hardcoded rule."""
+    log -- never the old proof-of-concept hardcoded rule. `bars_fetcher`
+    defaults to `_default_test_bars_fetcher` (see its own docstring for
+    why); pass an explicit one for a test that cares about the specific
+    reference price notional_cap/position_cap's fallback computes, or that
+    needs cvar-gate/pct-of-adv to see specific historical data."""
     log_path = tmp_path / "audit.jsonl"
     writer = AuditLogWriter(log_path, session_id="test-session")
-    engine = PolicyEngine.from_yaml("policies/default.yaml", audit_writer=writer)
+    engine = PolicyEngine.from_yaml(
+        "policies/default.yaml",
+        audit_writer=writer,
+        bars_fetcher=bars_fetcher or _default_test_bars_fetcher,
+    )
     return engine, log_path
 
 
@@ -42,14 +70,16 @@ def _real_policy_engine_without_market_data_rules(tmp_path):
     Needed for tests that exercise a *different* rule's behavior on a
     computable-notional limit order: neither rule has a bars_fetcher
     injection point through build_proxy() (only through constructing a
-    Rule directly, which these end-to-end tests don't do), and cvar-gate
-    separately hard-blocks unconditionally since nothing in src/ populates
-    state["account_equity"] (documented gap -- see FirewallMiddleware's
-    own docstring and AUDIT.md). Without real Alpaca credentials in the
-    test environment, both rules' real network calls fail (HTTP 401) and
-    both fail closed by design -- exactly the behavior their own tests
-    exercise directly. Disabling them here doesn't hide either gap; it
-    keeps them out of the way of a test that isn't about either rule."""
+    Rule directly, which these end-to-end tests don't do), so their real
+    network calls run against whatever real/no Alpaca credentials happen to
+    be present in the environment -- not hermetic, and not what these
+    tests are about. `state["account_equity"]` IS now populated from a
+    real GET /v2/account fetch (see FirewallMiddleware._populate_account_
+    state and account_data.AccountPnLResult.equity) -- that specific gap
+    is closed; the remaining reason to disable these two here is purely
+    the missing bars_fetcher injection point. Disabling them here doesn't
+    hide anything; it keeps them out of the way of a test that isn't about
+    either rule."""
     import yaml
 
     raw = yaml.safe_load(Path("policies/default.yaml").read_text(encoding="utf-8"))
@@ -85,7 +115,52 @@ def make_fake_upstream() -> tuple[FastMCP, list[tuple[str, dict]]]:
         received.append(("close_all_positions", {"cancel_orders": cancel_orders}))
         return {"closed": "all"}
 
+    @upstream.tool
+    def place_stock_order(
+        symbol: str,
+        side: str,
+        qty: str | None = None,
+        limit_price: str | None = None,
+        client_order_id: str | None = None,
+    ) -> dict:
+        received.append(("place_stock_order", {"symbol": symbol, "side": side}))
+        return {"id": "should-not-run", "status": "accepted"}
+
     return upstream, received
+
+
+def test_dry_run_suppresses_mutation_at_proxy_boundary(tmp_path):
+    async def _runner():
+        upstream, received = make_fake_upstream()
+        engine, log_path = _real_policy_engine(tmp_path)
+        proxy = build_proxy(
+            upstream,
+            engine,
+            dry_run=True,
+            account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+                ok=True, session_pnl_usd=0.0, equity=100_000.0
+            ),
+            positions_fetcher=lambda: account_data.PositionsResult(
+                ok=True, positions={}, fetched_at=0.0
+            ),
+        )
+        async with Client(proxy) as client:
+            result = await client.call_tool(
+                "place_stock_order",
+                {
+                    "symbol": "AAPL", "side": "buy", "qty": "1",
+                    "limit_price": "100", "client_order_id": "dry-client-1",
+                },
+                raise_on_error=False,
+            )
+        assert received == []
+        payload = json.loads(result.content[0].text)
+        assert json.loads(payload["result"])["status"] == "dry_run"
+        records = _read_records(log_path)
+        assert records[-1]["forwarded"] is False
+        assert records[-1]["upstream_status"] == "not_forwarded"
+
+    asyncio.run(_runner())
 
 
 def test_normal_call_is_forwarded_upstream(tmp_path):
@@ -476,6 +551,7 @@ def test_e4_reactivation_25_rapid_place_orders_trip_the_rate_throttle(tmp_path):
                         "qty": "1",
                         "type": "market",
                         "time_in_force": "day",
+                        "limit_price": "100.00",
                     },
                     raise_on_error=False,
                 )
@@ -521,7 +597,7 @@ def test_hard_blocked_place_order_attempts_are_recorded_in_order_history(tmp_pat
     context = SimpleNamespace(
         message=SimpleNamespace(
             name="place_stock_order",
-            arguments={"symbol": "NOTALLOWED", "side": "buy", "qty": "1"},
+            arguments={"symbol": "NOTALLOWED", "side": "buy", "qty": "1", "limit_price": "100.00"},
         )
     )
 
@@ -639,7 +715,7 @@ def test_session_pnl_fetch_reactivates_drawdown_killswitch(tmp_path):
         async with Client(proxy) as client:
             return await client.call_tool(
                 "place_stock_order",
-                {"symbol": "AAPL", "side": "buy", "qty": "1"},
+                {"symbol": "AAPL", "side": "buy", "qty": "1", "limit_price": "150.00"},
                 raise_on_error=False,
             )
 
@@ -657,6 +733,150 @@ def test_session_pnl_fetch_reactivates_drawdown_killswitch(tmp_path):
     assert len(killswitch_blocks) == 1
 
 
+def test_account_equity_reaches_cvar_gate_from_the_same_fetch(tmp_path):
+    """state["account_equity"] must now be populated from the same account
+    fetch that feeds session_pnl_usd, letting cvar_gate evaluate a genuine
+    CVaR figure against real account scale instead of hard-blocking on
+    "insufficient account state" (missing/non-numeric account_equity).
+    Uses PolicyEngine.from_yaml's bars_fetcher injection point (see
+    policy.py's _BARS_FETCHER_AWARE_RULE_TYPES) to give cvar-gate/pct-of-adv
+    a deterministic, low-volatility fake series -- keeps this hermetic
+    while still exercising cvar_gate's own real CVaR math against a
+    real-scale equity figure ($100k, matching this project's real paper
+    account -- see the live check this test formalizes)."""
+    from firewall.market_data import BarsResult, DailyBar
+
+    calls = []
+
+    def fake_bars_fetcher(symbol, lookback_days, **kwargs):
+        calls.append(symbol)
+        # Flat, low-vol closes around $100 with real volume -- a $100
+        # order's CVaR-implied loss stays far under 2% of $100k equity
+        # ($2,000), and 1 share is far under 1% of a 1M-share ADV.
+        closes = [100.0 + (i % 3) * 0.1 for i in range(lookback_days)]
+        return BarsResult(
+            ok=True,
+            bars=[DailyBar(close=c, volume=1_000_000.0) for c in closes],
+        )
+
+    upstream = FastMCP("fake-alpaca")
+
+    @upstream.tool
+    def place_stock_order(
+        symbol: str, side: str, qty: str | None = None, limit_price: str | None = None
+    ) -> dict:
+        return {"order_id": "fake-order-1", "status": "accepted"}
+
+    engine, log_path = _real_policy_engine(tmp_path, bars_fetcher=fake_bars_fetcher)
+
+    def fake_account_fetcher():
+        return account_data.AccountPnLResult(ok=True, session_pnl_usd=0.0, equity=100_000.0)
+
+    proxy = build_proxy(
+        upstream, policy_engine=engine, account_pnl_fetcher=fake_account_fetcher
+    )
+
+    async def run():
+        async with Client(proxy) as client:
+            return await client.call_tool(
+                "place_stock_order",
+                {"symbol": "AAPL", "side": "buy", "qty": "1", "limit_price": "100.00"},
+                raise_on_error=False,
+            )
+
+    result = asyncio.run(run())
+
+    assert not result.is_error, result
+    assert "AAPL" in calls, "cvar_gate/pct_of_adv must have actually run against real data"
+
+    records = _read_records(log_path)
+    cvar_records = [r for r in records if r.get("rule_id") == "cvar-gate"]
+    # cvar-gate only writes a record when it actually blocks (RuleOutcome
+    # triggered=True writes hard_block; triggered=False writes nothing of
+    # its own -- the overall "allow" record covers it). Either way, the
+    # fail-closed-on-missing-state message must never appear: proof this
+    # ran against real equity, not the documented gap.
+    assert not any(
+        "insufficient account state" in (r.get("reason") or "") for r in cvar_records
+    )
+    assert not any(
+        "missing or not numeric" in (r.get("reason") or "") for r in records
+    )
+
+
+def test_position_cap_cross_chunk_breach_is_caught_with_a_tight_cap(tmp_path):
+    """Same setup as above, but with a cap tight enough that only the SUM
+    of two same-symbol chunks breaches it -- proves the in-flight add is
+    the thing actually catching this, not just documenting intent."""
+    import yaml
+
+    raw = yaml.safe_load(Path("policies/default.yaml").read_text(encoding="utf-8"))
+    for rule in raw["rules"]:
+        if rule["id"] == "position-cap-per-symbol":
+            rule["max_usd_per_symbol"] = 10000  # each chunk is $6,000; sum is $12,000
+            rule["max_pct_of_equity"] = None  # isolate the static-cap path being tested
+        if rule["id"] == "notional-cap-single-order":
+            rule["max_usd"] = 10000  # each $6,000 chunk must clear this individually
+            rule["max_pct_of_equity"] = None
+        if rule["id"] in ("cvar-gate", "pct-of-adv"):
+            rule["enabled"] = False
+    policy_path = tmp_path / "tight_position_cap.yaml"
+    policy_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+
+    log_path = tmp_path / "audit.jsonl"
+    writer = AuditLogWriter(log_path, session_id="test-session")
+    engine = PolicyEngine.from_yaml(
+        policy_path, audit_writer=writer, bars_fetcher=_default_test_bars_fetcher
+    )
+
+    upstream = FastMCP("fake-alpaca")
+
+    @upstream.tool
+    def place_stock_order(
+        symbol: str, side: str, qty: str | None = None, limit_price: str | None = None
+    ) -> dict:
+        return {"order_id": "fake-order", "status": "accepted"}
+
+    def fake_positions_fetcher():
+        return account_data.PositionsResult(ok=True, positions={"AAPL": 0.0}, fetched_at=0.0)
+
+    def fake_account_fetcher():
+        return account_data.AccountPnLResult(ok=True, session_pnl_usd=0.0, equity=100_000.0)
+
+    proxy = build_proxy(
+        upstream,
+        policy_engine=engine,
+        positions_fetcher=fake_positions_fetcher,
+        account_pnl_fetcher=fake_account_fetcher,
+    )
+
+    async def run():
+        async with Client(proxy) as client:
+            first = await client.call_tool(
+                "place_stock_order",
+                {"symbol": "AAPL", "side": "buy", "qty": "20", "limit_price": "300.00"},
+                raise_on_error=False,
+            )
+            second = await client.call_tool(
+                "place_stock_order",
+                {"symbol": "AAPL", "side": "buy", "qty": "20", "limit_price": "300.00"},
+                raise_on_error=False,
+            )
+            return first, second
+
+    first, second = asyncio.run(run())
+
+    assert not first.is_error, first
+    assert second.is_error
+    assert "position-cap-per-symbol" in second.content[0].text
+
+    records = _read_records(log_path)
+    breach = next(r for r in records if r["rule_id"] == "position-cap-per-symbol")
+    # $6,000 in-flight (first chunk) + $6,000 (this order) = $12,000, not
+    # $6,000 -- proof the sum, not just this call's own notional, was used.
+    assert "12,000.00" in breach["reason"]
+
+
 def test_session_pnl_fetch_failure_is_recorded_in_audit_log(tmp_path):
     """A fetch failure must not be a silent skip: drawdown_killswitch
     already fails *open* on missing session_pnl_usd (AUDIT.md E3 flags
@@ -667,10 +887,12 @@ def test_session_pnl_fetch_failure_is_recorded_in_audit_log(tmp_path):
     upstream = FastMCP("fake-alpaca")
 
     @upstream.tool
-    def place_stock_order(symbol: str, side: str, qty: str | None = None) -> dict:
+    def place_stock_order(
+        symbol: str, side: str, qty: str | None = None, limit_price: str | None = None
+    ) -> dict:
         return {"order_id": "fake-order-1", "status": "accepted"}
 
-    engine, log_path = _real_policy_engine(tmp_path)
+    engine, log_path = _real_policy_engine_without_market_data_rules(tmp_path)
 
     def failing_pnl_fetcher():
         return account_data.AccountPnLResult(
@@ -685,7 +907,7 @@ def test_session_pnl_fetch_failure_is_recorded_in_audit_log(tmp_path):
         async with Client(proxy) as client:
             return await client.call_tool(
                 "place_stock_order",
-                {"symbol": "AAPL", "side": "buy", "qty": "1"},
+                {"symbol": "AAPL", "side": "buy", "qty": "1", "limit_price": "150.00"},
                 raise_on_error=False,
             )
 
@@ -939,7 +1161,7 @@ def test_hedge_proposal_fires_for_position_seeded_by_plain_market_order(
             # exact reproduction of the bug.
             first = await client.call_tool(
                 "place_stock_order",
-                {"symbol": "AAPL", "side": "buy", "qty": "10"},
+                {"symbol": "AAPL", "side": "buy", "qty": "10", "limit_price": "150.00"},
                 raise_on_error=False,
             )
             second = await client.call_tool(
@@ -1342,6 +1564,3 @@ def test_on_get_prompt_fails_closed_and_audits(tmp_path):
     assert records[0]["arguments"]["name"] == "trade_analysis_prompt"
     assert records[0]["arguments"]["arguments"] == {"symbol": "AAPL"}
     assert records[0]["rule_id"] == "unsupported_endpoint_guard"
-
-
-

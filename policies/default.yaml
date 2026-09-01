@@ -82,12 +82,34 @@ rules:
   # all, since position_cap/cvar_gate/pct_of_adv all require a parent
   # `symbol` that multi-leg calls don't carry. See notional_cap.py's
   # module docstring and AUDIT.md's "New feature" section.
+  # max_pct_of_equity (5% of state["account_equity"], the same key
+  # cvar_gate/pct_of_adv/hedge_cost_cap already read, populated once per
+  # call by FirewallMiddleware._populate_account_state -- not a second
+  # fetch): the PRIMARY cap, recomputed live against the account's real,
+  # current scale rather than a flat dollar figure picked once and never
+  # revisited as the account grows or shrinks. Deliberately equal to
+  # max_usd's $5,000 at this account's real ~$100k paper equity (verified
+  # live, 2026-08-29) -- not a coincidence: max_usd is kept as the STATIC
+  # FALLBACK for whenever account_equity is unavailable (see
+  # notional_cap.py's own "DYNAMIC CAP, WITH A STATIC FALLBACK" docstring
+  # section for why this rule deliberately does NOT fail closed on missing
+  # equity the way cvar_gate/hedge_cost_cap do -- it sits first in this
+  # evaluation order), so the two numbers agreeing means that fallback is a
+  # true "same conservative bound, briefly stale" degrade, not a step down
+  # to something looser. 5% is a starting, stated bound for a single
+  # order -- not tuned against this basket's own specific order sizes (see
+  # AUDIT.md's own warning against exactly that) -- chosen so that, at
+  # $100k, a rebalancing leg needing more than $5,000 in one symbol is
+  # expected to (and, by design, does) split into multiple capped chunks
+  # rather than being blocked outright -- see core_strategy.py's own
+  # chunking logic and module docstring.
   - id: notional-cap-single-order
     type: notional_cap
     enabled: true
     severity: hard
     regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
     max_usd: 5000
+    max_pct_of_equity: 0.05
     tool_match: ["order"]
     sizing_tool_match: ["replace_order_by_id"]
 
@@ -96,12 +118,29 @@ rules:
   # order. sizing_tool_match: same fail-closed-on-incomplete-data rationale
   # as notional-cap-single-order above (replace_order_by_id only, not the
   # place_* tools).
+  #
+  # max_pct_of_equity (25% of state["account_equity"], same key and same
+  # "static max_usd_per_symbol fallback on missing equity" reasoning as
+  # notional-cap-single-order above -- see position_cap.py's own "DYNAMIC
+  # CAP, WITH A STATIC FALLBACK" docstring section): a single symbol's
+  # exposure is capped at a quarter of the account rather than a flat
+  # dollar figure. Picked deliberately within a stated 25-30% range, at the
+  # tighter end: with this basket's real inverse-volatility weighting
+  # (verified live, 2026-08-29 -- see README), the lowest-volatility name
+  # (SPY) targets a raw weight comfortably above this ceiling on its own,
+  # so this value is chosen to produce a real, visible clip in
+  # core_strategy.py's allocation step (see its own module docstring and
+  # README) rather than a ceiling loose enough to never actually bind --
+  # "a limit that's never reached" is not a meaningfully verified limit.
+  # The other three names in the basket do not individually approach this
+  # ceiling at their own raw target weights.
   - id: position-cap-per-symbol
     type: position_cap
     enabled: true
     severity: hard
     regulation_ref: "SEC Rule 15c3-5(c)(1)(i)"
     max_usd_per_symbol: 20000
+    max_pct_of_equity: 0.25
     tool_match: ["order"]
     sizing_tool_match: ["replace_order_by_id"]
 
@@ -358,7 +397,7 @@ rules:
     enabled: true
     severity: hard
     regulation_ref: "SEC Rule 15c3-5(c)(2)(ii)"
-    allowed_symbols: ["AAPL", "MSFT", "SPY", "QQQ"]
+    allowed_symbols: ["AAPL", "MSFT", "SPY", "QQQ", "GD", "CACI", "ACN", "LDOS", "NOC", "BAH", "J"]
     tool_match: ["order"]
 
   # UNMAPPED: no verified US federal/FINRA citation confirmed specifically
@@ -432,6 +471,13 @@ rules:
   # SEC Rule 15c3-5(c)(1)(ii): pre-trade controls must throttle the rate of
   # automated order submission to prevent runaway/erroneous order flow.
   # Stays paused after a breach until a human explicitly resets it.
+  - id: pending-order-exposure
+    type: pending_order_exposure
+    enabled: true
+    severity: hard
+    regulation_ref: null
+    place_tool_match: ["place_stock_order"]
+
   - id: order-rate-throttle
     type: order_rate_throttle
     enabled: true

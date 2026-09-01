@@ -111,7 +111,14 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from firewall.market_data import BarsResult, fetch_daily_bars
+from firewall.market_data import (
+    DELTA_CORRIDOR_CEILING,
+    DELTA_CORRIDOR_CENTER,
+    DELTA_CORRIDOR_FLOOR,
+    BarsResult,
+    fetch_daily_bars,
+    resolve_listed_contract,
+)
 from firewall.order_history import OrderHistory
 from firewall.rules._util import extract_notional, matches_any
 from firewall.rules.base import Rule, RuleConfig, RuleOutcome
@@ -121,6 +128,19 @@ from firewall.rules.drawdown_killswitch import DrawdownKillswitchRule
 # Same broad pattern drawdown_killswitch/cvar_gate's own default tool_match
 # uses -- this feature only makes sense to evaluate on order-related calls.
 _ORDER_RELATED_TOOLS = ("order",)
+
+# Mirrors policies/default.yaml's option-expiry-floor rule's own
+# days_to_expiry_floor default (see option_expiry_floor.py) -- passed to
+# resolve_listed_contract as min_dte so a resolved contract is never one
+# that rule would hard-block on arrival anyway. Disclosed coupling, not a
+# live read of the YAML: core_strategy (where the scheduled overlay is
+# computed) has no access to the running PolicyEngine's rule instances the
+# way compute_proposal's cvar_gate_rule/drawdown_killswitch_rule reuse does
+# -- the reactive hedge is evaluated INSIDE the engine; the scheduled
+# overlay is computed OUTSIDE it, before the order is ever submitted. If
+# policies/default.yaml's days_to_expiry_floor is ever changed from 7,
+# this constant must be updated to match.
+_EXPIRY_FLOOR_DAYS = 7
 
 
 class _Params(BaseModel):
@@ -165,6 +185,7 @@ class ScheduledOverlayProposal:
     contracts: int
     flagged_notional: float
     occ_symbol: str
+    delta: float | None
     reason: str
 
 
@@ -220,6 +241,7 @@ def compute_scheduled_overlay(
     expiry_min_days: int = 14,
     expiry_max_days: int = 45,
     coverage_pct: float = 0.5,
+    min_dte: int | None = _EXPIRY_FLOOR_DAYS,
     now: float | None = None,
 ) -> ScheduledOverlayProposal | None:
     """Compute a scheduled protective put on the basket's largest position.
@@ -230,6 +252,34 @@ def compute_scheduled_overlay(
 
     Sized through the SAME premium-cap and delta-corridor rules already built
     for the reactive hedge, with no new risk logic.
+
+    otm_pct/expiry_min_days/expiry_max_days feed `_mechanical_strike`/
+    `_mechanical_expiry` exactly as before -- still fully mechanical, still
+    disclosed, no forecasting. What changed: their output is now a TARGET,
+    not a symbol. `resolve_listed_contract` snaps that target to a REAL
+    contract Alpaca actually lists -- nearest listed expiry satisfying
+    `min_dte`, then, at that expiry, the strike whose real DELTA lands
+    closest to the delta corridor's center (`DELTA_CORRIDOR_CENTER`,
+    0.325), not the strike nearest the target BY PRICE -- instead of
+    `format_occ_symbol` asserting one into existence from raw arithmetic.
+    See `resolve_listed_contract`'s own docstring for why a mechanically
+    "correct" strike/expiry pair is not necessarily a contract that
+    exists, why price-nearest is not the same as delta-nearest-to-center,
+    and why the final pick must still clear `DELTA_CORRIDOR_FLOOR` (the
+    only part of the corridor a rule actually enforces). Returns None if
+    no real contract resolves (same as the pre-existing "no positions to
+    hedge" case) -- this function still never asserts a phantom symbol,
+    and never proposes one `net_delta_floor` would hard-block on arrival.
+
+    Pure computation only -- writes nothing to the audit log itself
+    (resolve_listed_contract's own chain lookup is a market-data read, not
+    an audit write). The caller (`core_strategy.place_basket_orders`) is
+    responsible for writing a provenance record
+    (`rule_id="scheduled-options-overlay"`, `verdict="info"`) before
+    submitting the order this proposal describes, separately from whatever
+    real verdict `PolicyEngine.evaluate()` produces for that same
+    `place_option_order` call -- see that function's own docstring for why
+    these are two records, not one.
     """
     if not current_positions or not prices:
         return None
@@ -247,19 +297,41 @@ def compute_scheduled_overlay(
         return None
 
     current_price = prices[largest_sym]
-    strike = _mechanical_strike(current_price, otm_pct)
+    target_strike = _mechanical_strike(current_price, otm_pct)
     ts = now if now is not None else time.time()
     target_expiry = _mechanical_expiry(ts, expiry_min_days, expiry_max_days)
+
+    resolution = resolve_listed_contract(
+        largest_sym, target_strike, target_expiry, "P", min_dte=min_dte, now=ts
+    )
+    if not resolution.ok or resolution.contract is None:
+        return None
+
+    strike = resolution.contract.strike
+    actual_expiry = resolution.contract.expiry
+    occ_symbol = resolution.contract.occ_symbol
+    delta = resolution.contract.delta
     contracts = _mechanical_contracts(largest_notional, strike, coverage_pct)
-    occ_symbol = format_occ_symbol(largest_sym, target_expiry, "P", strike)
+    delta_note = (
+        f"resolved delta {delta:+.4f} (|delta| {abs(delta):.4f}, corridor center "
+        f"{DELTA_CORRIDOR_CENTER:.3f} of the "
+        f"{DELTA_CORRIDOR_FLOOR:.2f}-{DELTA_CORRIDOR_CEILING:.2f} band)"
+        if delta is not None
+        else "resolved delta unavailable"
+    )
 
     reason = (
         "SCHEDULED OPTIONS OVERLAY -- a disclosed, scheduled options overlay applied "
         "regardless of market conditions, distinct from the reactive CVaR-triggered hedge. "
         "Standing portfolio insurance, not a market-timing decision. Proposed structure: "
-        f"BUY {contracts} PUT contract(s) on {largest_sym} ({occ_symbol}), strike ${strike:,.2f} "
-        f"({otm_pct:.0%} out-of-the-money from current price ${current_price:,.2f}), target "
-        f"expiry {target_expiry} ({expiry_min_days}-{expiry_max_days} days out), covering "
+        f"BUY {contracts} PUT contract(s) on {largest_sym} ({occ_symbol}), a REAL listed "
+        f"contract resolved from Alpaca's own options chain and selected by DELTA, not price: "
+        f"strike ${strike:,.2f}, expiry {actual_expiry}, {delta_note} -- the listed strike at "
+        f"this expiry whose delta lands closest to the corridor center, among the "
+        f"{min_dte}-day-DTE-floor-satisfying, nearest-by-price-to-target candidates actually "
+        f"queried (target was strike ${target_strike:,.2f} [{otm_pct:.0%} out-of-the-money "
+        f"from current price ${current_price:,.2f}, a rough starting anchor only], expiry "
+        f"{target_expiry} [{expiry_min_days}-{expiry_max_days} days out]). Covering "
         f"{coverage_pct:.0%} of the largest position's ${largest_notional:,.2f} notional. "
         "Sized through the same premium-cap and delta-corridor rules built for the reactive hedge."
     )
@@ -268,10 +340,11 @@ def compute_scheduled_overlay(
         symbol=largest_sym,
         current_price=current_price,
         strike=strike,
-        target_expiry=target_expiry,
+        target_expiry=actual_expiry,
         contracts=contracts,
         flagged_notional=largest_notional,
         occ_symbol=occ_symbol,
+        delta=delta,
         reason=reason,
     )
 

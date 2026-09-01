@@ -72,7 +72,11 @@ def extract_notional(
     if notional is not None:
         return notional
 
-    qty = _as_number(arguments.get(qty_field))
+    qty = (
+        _as_number(arguments.get(qty_field))
+        if arguments.get(qty_field) is not None
+        else (_as_number(arguments.get("quantity")) or _as_number(arguments.get("qty")))
+    )
     price = _as_number(arguments.get(price_field))
     if qty is not None and price is not None:
         return qty * price * contract_multiplier
