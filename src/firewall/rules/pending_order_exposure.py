@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from pydantic import BaseModel
@@ -13,6 +14,9 @@ class _Params(BaseModel):
     place_tool_match: list[str] = ["place_stock_order"]
     snapshot_state_key: str = "exposure_snapshot"
     metadata_field: str = "_firewall_reconciliation"
+    max_target_usd: float = 20_000.0
+    max_target_pct_of_equity: float = 0.25
+    account_equity_state_key: str = "account_equity"
 
 
 class PendingOrderExposureRule(Rule):
@@ -43,9 +47,44 @@ class PendingOrderExposureRule(Rule):
             pending_qty = float(snapshot["pending_signed_qty"].get(symbol, 0.0))
         except (KeyError, TypeError, ValueError):
             return RuleOutcome(True, "reconciliation exposure fields are incomplete")
-        expected_fingerprint = str(metadata.get("snapshot_fingerprint") or "")
-        if not expected_fingerprint or expected_fingerprint != snapshot.get("fingerprint"):
-            return RuleOutcome(True, "position/open-order snapshot changed before submission")
+        prices = snapshot.get("current_prices") or {}
+        position_cap_rule = state.get("position_cap_rule")
+        try:
+            equity = float(state[self.cfg.account_equity_state_key])
+        except (KeyError, TypeError, ValueError):
+            return RuleOutcome(True, "server-side target validation data is incomplete")
+        try:
+            price = float(prices[symbol])
+        except (KeyError, TypeError, ValueError):
+            # A brand-new symbol has no broker position/current_price yet.
+            # Use the enabled position-cap rule's own trusted bars fetcher,
+            # never a price supplied by the order caller.
+            if position_cap_rule is None:
+                return RuleOutcome(True, "server-side target validation data is incomplete")
+            reference = position_cap_rule._reference_notional(symbol, {"qty": 1.0})
+            if not isinstance(reference, (int, float)) or isinstance(reference, bool):
+                return RuleOutcome(True, "server-side target reference price is unavailable")
+            price = float(reference)
+        if not all(math.isfinite(value) and value > 0 for value in (price, equity)):
+            return RuleOutcome(True, "server-side target validation data is invalid")
+        if position_cap_rule is not None:
+            server_cap_usd, _ = position_cap_rule._effective_cap(state)
+        else:
+            server_cap_usd = min(
+                self.cfg.max_target_usd,
+                equity * self.cfg.max_target_pct_of_equity,
+            )
+        server_max_target_qty = server_cap_usd / price
+        if (
+            not math.isfinite(target_qty)
+            or target_qty < 0
+            or target_qty > server_max_target_qty + 1e-9
+        ):
+            return RuleOutcome(
+                True,
+                f"caller target qty {target_qty:g} exceeds independently derived server maximum "
+                f"{server_max_target_qty:g} for {symbol}",
+            )
         committed = current_qty + pending_qty
         capacity = max(0.0, target_qty - committed) if side == "buy" else max(0.0, committed - target_qty)
         if side not in {"buy", "sell"} or qty <= 0:

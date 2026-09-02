@@ -16,6 +16,7 @@ def _rule():
     return PendingOrderExposureRule(RuleConfig.model_validate({
         "id": "pending-order-exposure", "type": "pending_order_exposure",
         "enabled": True, "severity": "hard", "regulation_ref": None,
+        "max_target_pct_of_equity": 1.0,
     }))
 
 

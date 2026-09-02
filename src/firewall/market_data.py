@@ -40,6 +40,7 @@ from datetime import datetime, timedelta, timezone
 from typing import NamedTuple
 
 _ALPACA_DATA_URL = "https://data.alpaca.markets/v2/stocks/{symbol}/bars"
+_ALPACA_LATEST_TRADE_URL = "https://data.alpaca.markets/v2/stocks/{symbol}/trades/latest"
 _ALPACA_OPTION_SNAPSHOT_URL = "https://data.alpaca.markets/v1beta1/options/snapshots"
 
 DEFAULT_TIMEOUT_SECONDS = 5.0
@@ -126,6 +127,54 @@ class BarsResult:
     @property
     def volumes(self) -> list[float]:
         return [bar.volume for bar in self.bars]
+
+
+@dataclass
+class LatestPriceResult:
+    ok: bool
+    price: float | None = None
+    reason: str | None = None
+
+
+def fetch_stock_latest_price(
+    symbol: str,
+    *,
+    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    feed: str = DEFAULT_STOCK_FEED,
+) -> LatestPriceResult:
+    """Fetch a fresh latest-trade estimate for equity exposure sizing.
+
+    This deliberately has no cache: it is the last-resort mark for an accepted,
+    unfilled market order that has neither a limit nor fill price. The returned
+    value is an exposure estimate, never represented as a confirmed fill.
+    """
+    url = _ALPACA_LATEST_TRADE_URL.format(symbol=symbol) + "?" + urllib.parse.urlencode(
+        {"feed": feed}
+    )
+    request = urllib.request.Request(
+        url,
+        headers={
+            "APCA-API-KEY-ID": os.environ.get("ALPACA_API_KEY", ""),
+            "APCA-API-SECRET-KEY": os.environ.get("ALPACA_SECRET_KEY", ""),
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            payload = json.loads(response.read())
+        price = float((payload.get("trade") or {})["p"])
+        if not math.isfinite(price) or price <= 0:
+            raise ValueError(f"invalid latest trade price {price!r}")
+        return LatestPriceResult(ok=True, price=price)
+    except (socket.timeout, TimeoutError):
+        return LatestPriceResult(ok=False, reason=f"timed out fetching latest trade for {symbol}")
+    except urllib.error.HTTPError as exc:
+        return LatestPriceResult(ok=False, reason=f"HTTP {exc.code} fetching latest trade for {symbol}: {exc.reason}")
+    except urllib.error.URLError as exc:
+        return LatestPriceResult(ok=False, reason=f"network error fetching latest trade for {symbol}: {exc.reason}")
+    except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
+        return LatestPriceResult(ok=False, reason=f"malformed latest trade for {symbol}: {exc}")
+    except Exception as exc:
+        return LatestPriceResult(ok=False, reason=f"unexpected error fetching latest trade for {symbol}: {exc}")
 
 
 @dataclass

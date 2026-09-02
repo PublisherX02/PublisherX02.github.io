@@ -123,6 +123,12 @@ class OptionSpreadGuardRule(Rule):
             )
 
         bid, ask = result.quote.bid, result.quote.ask
+        if ask <= 0 or bid < 0 or bid > ask:
+            return RuleOutcome(
+                True,
+                f"invalid or crossed option quote for {symbol}: "
+                f"bid {bid:,.2f} / ask {ask:,.2f}",
+            )
         relative_spread = (ask - bid) / ask
 
         if relative_spread > self.cfg.max_relative_spread:

@@ -7,6 +7,7 @@ configured rules (see firewall/rules/) against incoming MCP tool calls.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Callable, Literal
@@ -16,7 +17,7 @@ from pydantic import BaseModel
 
 from firewall.audit import AuditEvent, AuditLogWriter, UpstreamStatus, compute_record_hash
 from firewall.market_data import BarsResult
-from firewall.rules import RULE_TYPES, Rule, RuleConfig
+from firewall.rules import RULE_TYPES, Rule, RuleConfig, validate_catchall_coverage
 from firewall.rules.cvar_gate import CVaRGateRule
 from firewall.rules.notional_cap import NotionalCapRule
 from firewall.rules.pct_of_adv import PctOfAdvRule
@@ -37,6 +38,13 @@ _BARS_FETCHER_AWARE_RULE_TYPES: tuple[type[Rule], ...] = (
     PctOfAdvRule,
     NotionalCapRule,
     PositionCapRule,
+)
+
+_OCC_OPTION_SYMBOL = re.compile(r"^[A-Z]{1,6}\d{6}[CP]\d{8}$", re.IGNORECASE)
+_OPTION_ORDERS_DISABLED_RULE_ID = "option-orders-disabled"
+_OPTION_ORDERS_DISABLED_REASON = (
+    "option orders are unconditionally disabled at the firewall boundary "
+    "until their upstream schema and risk controls are rebuilt and verified."
 )
 
 
@@ -68,25 +76,49 @@ class Verdict(BaseModel):
     regulation_ref: str | None = None
     reason: str | None = None
     warnings: list[Warning] = []
+    informational_notes: list[str] = []
 
 
 def _is_unsupported_order_shape(arguments: dict[str, Any]) -> bool:
-    """True if order shape is bracket, OCO, OTO, multi-leg with >1 leg,
-    or has take_profit/stop_loss fields present."""
+    """Recognize unsupported order structures by shape, not field values.
+
+    Presence is deliberate: malformed, empty, or partially populated child
+    structures must fail closed instead of falling through merely because a
+    caller omitted the fields a downstream sizing rule happens to inspect.
+    """
     if not arguments:
         return False
     order_class = arguments.get("order_class")
-    order_class_str = str(order_class).lower() if isinstance(order_class, str) else ""
-    if order_class_str in ("bracket", "oco", "oto"):
+    order_class_str = order_class.strip().casefold() if isinstance(order_class, str) else ""
+    if order_class_str in ("bracket", "oco", "oto", "mleg"):
         return True
-    legs = arguments.get("legs")
-    if order_class_str == "mleg" and isinstance(legs, list) and len(legs) > 1:
+    if "legs" in arguments:
         return True
-    if isinstance(legs, list) and len(legs) > 1:
-        return True
-    if arguments.get("take_profit") is not None or arguments.get("stop_loss") is not None:
+    if "take_profit" in arguments or "stop_loss" in arguments:
         return True
     return False
+
+
+def _is_option_order_call(tool_name: str, arguments: dict[str, Any]) -> bool:
+    """Recognize both named and disguised option-order calls.
+
+    This is deliberately independent of the strategy and configured rule set:
+    options stay disabled even when a caller uses another order tool name or
+    constructs either the current legs-based schema or the legacy OCC-symbol
+    schema.
+    """
+    normalized_tool_name = str(tool_name).strip().lower()
+    if "option" in normalized_tool_name and "order" in normalized_tool_name:
+        return True
+    if not arguments:
+        return False
+    if "legs" in arguments:
+        return True
+    order_class = arguments.get("order_class")
+    if isinstance(order_class, str) and order_class.strip().lower() == "mleg":
+        return True
+    symbol = arguments.get("symbol")
+    return isinstance(symbol, str) and _OCC_OPTION_SYMBOL.fullmatch(symbol.strip()) is not None
 
 
 def _describe_verdict(verdict: Verdict) -> tuple[str, str | None, str | None, str]:
@@ -136,6 +168,9 @@ class PolicyEngine:
         """
         path = Path(path)
         raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        raw_rules = raw.get("rules", [])
+        if any(rule.get("type") == "unrecognized_tool_catchall" for rule in raw_rules):
+            validate_catchall_coverage(raw_rules)
         config = PolicyConfig.model_validate(raw)
 
         rules: list[Rule] = []
@@ -178,6 +213,27 @@ class PolicyEngine:
         """
         state = state if state is not None else {}
         warnings: list[Warning] = []
+        informational_notes: list[str] = []
+
+        if _is_option_order_call(tool_name, arguments):
+            if self.audit_writer is not None:
+                self.audit_writer.append(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    verdict="hard_block",
+                    reason=_OPTION_ORDERS_DISABLED_REASON,
+                    forwarded=False,
+                    upstream_status="not_forwarded",
+                    rule_id=_OPTION_ORDERS_DISABLED_RULE_ID,
+                    regulation_ref=None,
+                )
+            return Verdict(
+                decision="hard_block",
+                rule_id=_OPTION_ORDERS_DISABLED_RULE_ID,
+                regulation_ref=None,
+                reason=_OPTION_ORDERS_DISABLED_REASON,
+                warnings=warnings,
+            )
 
         if _is_unsupported_order_shape(arguments):
             reason = (
@@ -247,6 +303,9 @@ class PolicyEngine:
                         rule_id=rule.id,
                         regulation_ref=rule.regulation_ref,
                     )
+            for event_verdict, event_reason in outcome.state_events:
+                if event_verdict == "info":
+                    informational_notes.append(event_reason)
 
             if not outcome.triggered:
                 continue
@@ -279,7 +338,11 @@ class PolicyEngine:
                 )
             )
 
-        return Verdict(decision="allow", warnings=warnings)
+        return Verdict(
+            decision="allow",
+            warnings=warnings,
+            informational_notes=informational_notes,
+        )
 
     def record_call_pending(
         self,

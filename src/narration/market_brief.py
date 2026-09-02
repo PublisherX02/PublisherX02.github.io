@@ -155,31 +155,13 @@ def _save_persisted_brief(brief: MarketBriefResult, cache_file: Path | str = DEF
         pass
 
 
-def fetch_sec_edgar_current_ratios(timeout: float = 3.0) -> dict[str, float]:
-    """Retrieves current ratios from SEC EDGAR or falls back to precomputed values."""
-    ratios: dict[str, float] = dict(KNOWN_SEC_EDGAR_CURRENT_RATIOS)
+def fetch_sec_edgar_current_ratios() -> dict[str, float]:
+    """Return the validated cache-only ratios used by the narration layer.
 
-    # Optional dynamic live refresh attempt
-    try:
-        workspace_root = Path(__file__).resolve().parent.parent.parent
-        scripts_dir = workspace_root / "scripts"
-        if str(scripts_dir) not in sys.path:
-            sys.path.insert(0, str(scripts_dir))
-
-        # Import dynamically without hard dependency
-        import sec_edgar_current_ratio  # type: ignore
-
-        for ticker in ["GD", "CACI", "LDOS", "NOC", "BAH", "MSFT", "AAPL"]:
-            try:
-                res = sec_edgar_current_ratio.compute_current_ratio(ticker)
-                if res and res.current_ratio > 0:
-                    ratios[ticker] = round(res.current_ratio, 2)
-            except Exception:
-                continue
-    except Exception:
-        pass
-
-    return ratios
+    Live SEC refresh is intentionally not performed in the trading process;
+    the previous timeout argument did not bound its multi-request loop.
+    """
+    return dict(KNOWN_SEC_EDGAR_CURRENT_RATIOS)
 
 
 def fetch_usaspending_contract_links(

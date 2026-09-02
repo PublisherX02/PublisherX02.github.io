@@ -147,7 +147,6 @@ def resolve_size(
     fetch = bars_fetcher or fetch_daily_bars
 
     notes: dict[str, str] = {}
-    equity = _as_number(account_state.get("account_equity"))
 
     # --- notional_cap -------------------------------------------------
     notional_cfg = _NotionalCapParams.model_validate(
@@ -165,6 +164,7 @@ def resolve_size(
 
     # --- cvar_max_size --------------------------------------------------
     cvar_cfg = _CVaRParams.model_validate(rule_dicts[_REQUIRED_RULE_IDS["cvar_gate"]])
+    equity = _as_number(account_state.get(cvar_cfg.account_equity_state_key))
     cvar_max_size, cvar_note = _resolve_cvar_max_size(symbol, equity, cvar_cfg, fetch)
     if cvar_note:
         notes["cvar_max_size"] = cvar_note

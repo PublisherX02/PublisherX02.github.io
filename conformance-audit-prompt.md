@@ -26,7 +26,7 @@ Do not accept passing tests or documentation assertions as evidence without veri
 - **C3**: Verify crash-safe audit trail generation. Every intercepted call must produce complete, durable audit records:
   - **Hard-blocked calls** (`hard_block`): exactly 1 audit record written with `upstream_status="not_forwarded"`.
   - **Allowed / Soft-blocked calls** (`allow` / `soft_block`): exactly 2 audit records sharing the same `call_id` (`upstream_status="pending"` durably flushed before upstream forwarding, followed by an outcome record with `upstream_status="ok"` or `upstream_status="error"` upon completion or handler error).
-  *(Note: Writing two records for forwarded calls is intentional crash-safety design to prevent lost audit trails on mid-call process failure; auditors must verify this 2-record pending+outcome lifecycle as conforming behavior, not a defect).*
+  *(Normative note: Writing two records for every forwarded call is the required crash-safety design, not duplicate logging. Auditors must mark the 2-record pending+outcome lifecycle conforming; “exactly one record per intercepted call” is not the invariant for allow/soft_block calls.)*
 - **C4**: Verify pre-dispatch flush. The `pending` audit record must be durably written to disk before `call_next()` invokes the upstream tool handler.
 
 ### D. Rule Correctness

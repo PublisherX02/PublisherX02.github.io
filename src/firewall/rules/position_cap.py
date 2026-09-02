@@ -150,6 +150,8 @@ class PositionCapRule(Rule):
             # (missing or failed) -- nothing is "since" an unknown baseline.
             return 0.0
 
+        exposure_snapshot = state.get("exposure_snapshot") or {}
+        broker_open_ids = set(exposure_snapshot.get("open_order_ids") or ())
         total = 0.0
         for event in order_history:
             if event.symbol != symbol:
@@ -158,7 +160,16 @@ class PositionCapRule(Rule):
                 continue
             if event.outcome not in ("open", "filled"):
                 continue
-            if event.timestamp <= fetched_at:
+            # Resting orders are not part of /positions. If reconciliation
+            # already saw this exact broker order, it is counted separately
+            # from pending_signed_qty below; otherwise retain the local
+            # accepted-order evidence even when Alpaca's open-order endpoint
+            # is briefly eventually consistent.
+            if event.outcome == "open" and event.order_id in broker_open_ids:
+                continue
+            # A confirmed fill older than the fresh position snapshot is
+            # assumed reflected by /positions. Newer fills remain in-flight.
+            if event.outcome == "filled" and event.timestamp <= fetched_at:
                 continue
             if event.price is not None:
                 total += event.qty * event.price
@@ -168,6 +179,24 @@ class PositionCapRule(Rule):
                 continue
             total += fallback
         return total
+
+    def _broker_pending_exposure(self, symbol: str, state: dict[str, Any]) -> float:
+        """Buy notional independently observed in the reconciled order snapshot."""
+        snapshot = state.get("exposure_snapshot") or {}
+        try:
+            pending_qty = max(0.0, float(
+                (snapshot.get("pending_signed_qty") or {}).get(symbol, 0.0)
+            ))
+        except (TypeError, ValueError):
+            return 0.0
+        if pending_qty <= 0:
+            return 0.0
+        try:
+            price = float((snapshot.get("current_prices") or {})[symbol])
+        except (KeyError, TypeError, ValueError):
+            reference = self._reference_notional(symbol, {self.cfg.qty_field: pending_qty})
+            return 0.0 if isinstance(reference, RuleOutcome) or reference is None else reference
+        return pending_qty * price
 
     def _effective_cap(self, state: dict[str, Any]) -> tuple[float, bool]:
         """See notional_cap.py's identical method for the full reasoning."""
@@ -211,7 +240,11 @@ class PositionCapRule(Rule):
             return RuleOutcome(False)
 
         positions: dict[str, Any] = state.get(self.cfg.positions_state_key) or {}
-        current = float(positions.get(symbol, 0.0)) + self._in_flight_exposure(symbol, state)
+        current = (
+            float(positions.get(symbol, 0.0))
+            + self._broker_pending_exposure(symbol, state)
+            + self._in_flight_exposure(symbol, state)
+        )
         prospective = current + notional
 
         cap, is_dynamic = self._effective_cap(state)

@@ -477,6 +477,9 @@ rules:
     severity: hard
     regulation_ref: null
     place_tool_match: ["place_stock_order"]
+    max_target_usd: 20000
+    max_target_pct_of_equity: 0.25
+    account_equity_state_key: "account_equity"
 
   - id: order-rate-throttle
     type: order_rate_throttle

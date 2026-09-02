@@ -1,5 +1,14 @@
 # mcp-trade-firewall
 
+## Pending-order reconciliation
+
+Every stock submission is evaluated against a fresh positions/open-orders
+snapshot inside the serialized proxy mutation gateway. Outstanding quantities
+are included before sizing; reconciliation fails closed when either broker read
+is unavailable or changes during the check. Caller-provided target quantity is
+bounded independently by the configured server-side per-symbol dollar and
+equity limits. A caller fingerprint is not treated as an authorization secret.
+
 An MCP proxy that enforces trading policy rules on tool calls before they
 reach a trading MCP server.
 
@@ -50,15 +59,30 @@ equities; SPY/QQQ are large-cap index ETFs — stated plainly.
 
 **Allocation Decision:** all 11 names sit alongside each other in a unified
 11-asset inverse-volatility risk-parity basket deploying 90% NAV with a 10% cash
-buffer, governed under the same 25% position cap ($25,000 max) and $5,000
+buffer, governed under the same dynamic 25%-of-live-equity position cap
+(approximately $25,000 in the historical ~$100k-account run) and $5,000
 notional chunking rules. Chosen over a separate sub-allocation sleeve or a
 replacement of the original four: a unified basket needs zero new risk
 parameters — the same `position_cap`/chunking/rebalancing logic already
 verified across AAPL/MSFT/SPY/QQQ governs all 11 names unmodified — and the
 diversification effect is a real, observed one, not an asserted one: SPY's
 raw inverse-vol weight dropped from ~44% in the 4-name basket to ~20.08% in
-the live 11-name run (see the live-verified table below) purely from the
+the paper-account 11-name sizing run (see the verified table below) purely from the
 formula now averaging across seven more, generally lower-volatility names.
+
+**Fresh-account submission milestone (2026-09-02):** the documented 90%-NAV
+strategy ran against a pinned, previously empty Alpaca paper account with the
+options overlay disabled. Alpaca independently reports 10 filled orders creating
+9 basket positions (`AAPL`, `MSFT`, `SPY`, `GD`, `ACN`, `LDOS`, `NOC`, `BAH`,
+and `J`), with zero open orders and position quantities matching the fills.
+Thirteen other chunks were denied by the fail-closed `pending-order-exposure`
+rule when the broker position/open-order snapshot was unavailable. Every blocked
+chunk failed closed rather than guessing, which is why the account holds nine
+correct positions instead of eleven uncertain ones. This is **real Alpaca
+paper-account trading history**, not live-money trading history. The generated
+run evidence is the dry-run artifact `data/cycles/20260902T172309369269Z.json`,
+the execute artifact `data/cycles/20260902T172637036914Z.json`, Alpaca's own
+order/position records, and the 1,726-record verified `audit.jsonl` chain.
 
 **Position sizing & entry logic:**
 > **"position sizes are set by inverse-volatility weighting using trailing realized volatility -- this allocates risk, not conviction, and makes no claim about expected returns or direction."**
@@ -84,7 +108,27 @@ equal dollars.
 (`DEFAULT_INTERVAL_SECONDS`, default 24h). Only places rebalancing orders if
 a position's current portfolio weight has drifted beyond a configured
 threshold (`DEFAULT_DRIFT_THRESHOLD`, default 5%) from its target weight —
-avoiding unnecessary turnover and unnecessary firewall load.
+avoiding unnecessary turnover and unnecessary firewall load. This rule is
+direction-neutral: a falling position that becomes underweight can generate a
+buy back toward target, so drift rebalancing is **not** the system's automatic
+crash de-risking mechanism. The only automatic crash de-risking path is a
+strategy-generated sell passing through the drawdown killswitch's narrow
+deleveraging exception after cumulative session P&L breaches -$1,000: while
+risk-adding orders remain blocked, a plain-equity sell may proceed only when a
+fresh authoritative broker snapshot proves that the order cannot exceed the
+held quantity. The exception permits a qualifying sell; it does not itself
+invent or size one.
+
+> **Current options status (supersedes the historical implementation notes
+> below): option execution is disabled pending an upstream schema and
+> risk-control rebuild.** `PolicyEngine.evaluate()` hard-blocks option-order
+> tool names, OCC option-symbol payloads, `mleg`, and any payload containing a
+> `legs` structure before configured option rules run. Bracket/OCO/OTO,
+> `take_profit`, and `stop_loss` shapes are likewise hard-blocked by structural
+> presence, including empty or null values. The overlay may still compute and
+> audit a proposal, but no option order is forwarded. Descriptions below of
+> contract selection and downstream option rules document dormant proposal/
+> rule machinery, not a currently functional execution overlay.
 
 **Scheduled options overlay — two audit records, not one:** the reactive
 hedge trigger (above) never places an order, so it only ever needs one
@@ -94,9 +138,9 @@ different — it submits a real `place_option_order` call, so it produces
 `core_strategy.place_basket_orders` writes directly, before submitting
 (`tool_name: "scheduled_overlay:proposed"`, `rule_id:
 "scheduled-options-overlay"`, `verdict: "info"`), and the ordinary record
-`PolicyEngine.evaluate()` writes for that same call carrying whatever
-`rule_id` actually evaluated it (e.g. `option-spread-guard`,
-`hedge-cost-cap`, `net-delta-floor`, or `None` if nothing fired). The
+`PolicyEngine.evaluate()` writes for that same call. Its current `rule_id` is
+always `option-orders-disabled`; historical downstream examples included
+`option-spread-guard`, `hedge-cost-cap`, and `net-delta-floor`. The
 provenance record is unconditional and written first, so it survives even
 when the real evaluation hard-blocks the order — a dashboard reading
 `audit.jsonl` can tell "this option order came from the scheduled overlay"
@@ -245,7 +289,7 @@ none of it is a flat dollar figure sized to make a demo look good.
   risk consequence), not a threshold tuned to make a particular cycle's
   order count look larger or smaller.
 
-**Live-verified, 2026-08-30, real paper account (equity $99,977.54,
+**Paper-account verified sizing snapshot, 2026-08-30 (equity $99,977.54,
 `python -m core_strategy`, 11-asset expanded risk-parity basket, real current positions, real
 market prices):** target budget $89,979.79 (90% NAV), $11,625.08 cash buffer (11.63% NAV),
 25% position cap ($25,000 ceiling), $5,000 per-chunk ceiling with `ThrottlePacer` spacing:
@@ -417,6 +461,15 @@ fabricated turns.
   halt actually means (an open position sitting at an unrealized paper
   loss could trip it with nothing having closed) and needs its own
   explicit sign-off, not a silent wiring choice.
+
+- **The autonomous scheduler defaults to an unbounded cycle count.**
+  `run_loop.py` supports `--max-cycles`, and the documented operating commands
+  supply it explicitly, but omitting the flag leaves `max_cycles=None` and the
+  scheduler continues until it receives a stop signal. Market-clock gating,
+  live-mode account pinning, and the single-cycle lock still apply, but they do
+  not turn an unlimited run into a bounded one. Treat explicit `--max-cycles`
+  plus periodic heartbeat, cycle-state, and broker-order checks as required
+  operating procedure; changing the default remains disclosed follow-up work.
 
 - **`cvar_gate` is a noisy tail estimate on short lookback windows.**
   It computes CVaR via historical simulation (empirical daily log returns
@@ -691,7 +744,8 @@ fabricated turns.
   result.
 
   **Update, 2026-08-28 — `order_class="bracket"/"oco"/"oto"` and
-  multi-leg calls with more than one leg no longer reach `notional_cap`
+  every payload structurally containing `legs`, `take_profit`, or `stop_loss`
+  no longer reaches `notional_cap`
   or any other rule described above at all.** A new upfront check
   (`_is_unsupported_order_shape` in `policy.py`) now hard-blocks those
   shapes outright, before `PolicyEngine.evaluate()`'s rule loop runs —
@@ -700,13 +754,13 @@ fabricated turns.
   notional level" framing for those specific shapes: that framing now
   describes only what's left ungated by the new check —
   `replace_order_by_id` (carries no `order_class`/`legs`/`take_profit`/
-  `stop_loss`) and a single-leg `order_class="mleg"` call (exactly one
-  leg, which the new check's `len(legs) > 1` condition does not catch).
+  `stop_loss`). `mleg` is also rejected regardless of whether `legs` is
+  populated. Shape matching is case- and whitespace-insensitive and rejects
+  these structural keys even when their values are empty or null.
 
 - **Bracket, OCO, OTO, and multi-leg order shapes (or any order with `take_profit`/`stop_loss`) are hard-blocked:** bracket/OCO/multi-leg order shapes are not yet risk-assessed by this firewall and are blocked until support exists.
 
 
-claude --resume 8150dd43-8739-43d6-9a11-cf0c58090eed
 # Competition-safe execution modes
 
 Read-only account verification (never constructs an order cycle):
@@ -743,4 +797,7 @@ python run_loop.py --execute --expected-account-id YOUR_ACCOUNT_ID \
   --max-cycles 5 --interval-seconds 60 --budget 1000
 ```
 
-Autonomous options overlays are disabled unless `--include-options` is supplied.
+Option proposal generation is omitted unless `--include-options` is supplied.
+Even with that flag, every option-order submission is hard-blocked at the
+policy boundary pending a schema and risk-control rebuild; the flag does not
+enable option execution.

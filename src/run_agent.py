@@ -47,6 +47,7 @@ except ImportError:
 from fastmcp import Client, FastMCP
 from rich.box import ROUNDED, SIMPLE
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
@@ -214,7 +215,10 @@ class HumanReadableCycleRunner:
         account_equity = dynamic_cfg.get("account_equity")
         pnl_res = account_data.fetch_session_pnl()
         if not pnl_res.ok or account_equity is None:
-            self.console.print(f"[bold red][X] Failed to fetch live account equity: {pnl_res.reason}[/bold red]")
+            self.console.print(
+                f"[bold red][X] Failed to fetch live account equity: "
+                f"{escape(str(pnl_res.reason))}[/bold red]"
+            )
             return {"ok": False, "reason": pnl_res.reason}
         if self.expected_account_id and pnl_res.account_id != self.expected_account_id:
             actual = pnl_res.account_id or "unavailable"
@@ -532,7 +536,6 @@ class HumanReadableCycleRunner:
                     )
                     payload["_firewall_reconciliation"] = {
                         "target_qty": target_qty,
-                        "snapshot_fingerprint": exposure_snapshot["fingerprint"],
                     }
 
                     if lifecycle_journal.unresolved(order_client_id):
@@ -556,7 +559,9 @@ class HumanReadableCycleRunner:
                     try:
                         result = await client.call_tool(core_strategy.symbol_tool_name(), payload, raise_on_error=False)
                     except Exception as exc:
-                        self.console.print(f"    [bold red]Transport Error:[/bold red] {exc}")
+                        self.console.print(
+                            f"    [bold red]Transport Error:[/bold red] {escape(str(exc))}"
+                        )
                         attempts.append(
                             core_strategy.OrderAttempt(
                                 symbol=symbol,
@@ -584,8 +589,9 @@ class HumanReadableCycleRunner:
                                 clean_reason = parts[1].strip()
 
                         self.console.print(
-                            f"    [bold red][X] BLOCKED BY FIREWALL RULE: '{rule_name}'[/bold red]\n"
-                            f"       [yellow]Reason:[/yellow] {clean_reason}\n"
+                            f"    [bold red][X] BLOCKED BY FIREWALL RULE: "
+                            f"'{escape(str(rule_name))}'[/bold red]\n"
+                            f"       [yellow]Reason:[/yellow] {escape(str(clean_reason))}\n"
                             f"       [dim]Protection Note: This block is the policy engine working as designed to prevent risk violation.[/dim]"
                         )
                         blocked_orders.append({
@@ -633,6 +639,15 @@ class HumanReadableCycleRunner:
                             f"    [bold green][OK] {outcome_label}[/bold green]\n"
                             f"       [dim]{identity_line}[/dim]"
                         )
+                        for item in getattr(result, "content", []) or []:
+                            note = getattr(item, "text", "")
+                            if isinstance(note, str) and note.startswith(
+                                "DELEVERAGING_EXCEPTION_ALLOW:"
+                            ):
+                                self.console.print(
+                                    "       [bold cyan]Killswitch exception:[/bold cyan] "
+                                    f"{escape(note)}"
+                                )
                         executed_orders.append({
                             "symbol": symbol,
                             "side": side,
@@ -713,7 +728,8 @@ class HumanReadableCycleRunner:
                         if getattr(res, "is_error", False):
                             err_txt = getattr(res.content[0], "text", str(res)) if res.content else str(res)
                             self.console.print(
-                                f"    [bold yellow]Option Order Filtered / Blocked:[/bold yellow] {err_txt}\n"
+                                f"    [bold yellow]Option Order Filtered / Blocked:[/bold yellow] "
+                                f"{escape(str(err_txt))}\n"
                                 f"    [dim](Standing insurance proposal recorded in audit log; options trading restrictions applied).[/dim]"
                             )
                         else:
@@ -739,12 +755,15 @@ class HumanReadableCycleRunner:
                             })
                             self.console.print(
                                 f"    [bold green][OK] OPTION ORDER ALLOWED & SUBMITTED[/bold green]: "
-                                f"{overlay.occ_symbol} | broker status: {receipt.status} | "
-                                f"order ID: {receipt.order_id or 'unavailable'} | "
+                                f"{overlay.occ_symbol} | broker status: "
+                                f"{escape(str(receipt.status))} | "
+                                f"order ID: {escape(str(receipt.order_id or 'unavailable'))} | "
                                 f"filled: {receipt.filled}"
                             )
                     except Exception as exc:
-                        self.console.print(f"    [dim]Options transport note: {exc}[/dim]")
+                        self.console.print(
+                            f"    [dim]Options transport note: {escape(str(exc))}[/dim]"
+                        )
                 else:
                     self.console.print("  [dim]No position met threshold for scheduled options overlay this cycle.[/dim]")
 
@@ -838,7 +857,10 @@ class HumanReadableCycleRunner:
                     gov_status = "[bold yellow]Dry Run — Not Submitted[/bold yellow]"
                 elif sym_blocked:
                     trades_str = "0 sh (Blocked)"
-                    gov_status = f"[bold red]Cap Protected ({sym_blocked[0]['rule']})[/bold red]"
+                    gov_status = (
+                        f"[bold red]Cap Protected "
+                        f"({escape(str(sym_blocked[0]['rule']))})[/bold red]"
+                    )
                 else:
                     trades_str = "0 sh"
                     gov_status = "[green]In Target Range[/green]"
@@ -895,7 +917,10 @@ class HumanReadableCycleRunner:
                     )
                     self.console.print()
                 except Exception as exc:
-                    self.console.print(f"[dim yellow]AI commentary standby ({exc}) -- trading pipeline running normally.[/dim yellow]\n")
+                    self.console.print(
+                        f"[dim yellow]AI commentary standby ({escape(str(exc))}) -- "
+                        "trading pipeline running normally.[/dim yellow]\n"
+                    )
 
             # Audit Trail Verification
             audit_path = Path("audit.jsonl")
@@ -1040,7 +1065,10 @@ async def main_async(argv: list[str] | None = None) -> int:
         pnl = account_data.fetch_session_pnl(cache_ttl_seconds=0)
         positions = account_data.fetch_positions(cache_ttl_seconds=0)
         if not pnl.ok:
-            console.print(f"[bold red]Paper-account preflight failed: {pnl.reason}[/bold red]")
+            console.print(
+                f"[bold red]Paper-account preflight failed: "
+                f"{escape(str(pnl.reason))}[/bold red]"
+            )
             return 1
         if args.expected_account_id and pnl.account_id != args.expected_account_id:
             console.print("[bold red]Paper-account preflight failed: account ID mismatch.[/bold red]")
@@ -1061,7 +1089,9 @@ async def main_async(argv: list[str] | None = None) -> int:
     try:
         lock.acquire()
     except CycleAlreadyRunning as exc:
-        console.print(f"[bold red]Refusing overlapping run: {exc}[/bold red]")
+        console.print(
+            f"[bold red]Refusing overlapping run: {escape(str(exc))}[/bold red]"
+        )
         return 1
     if prior_state and prior_state.get("status") in {"starting", "running"} and not args.recover:
         console.print(
@@ -1112,7 +1142,10 @@ async def main_async(argv: list[str] | None = None) -> int:
         return 0 if result.get("ok") else 1
     except Exception as exc:
         write_cycle_state(cycle_id, "failed", details={"error": repr(exc)})
-        console.print(f"[bold red]Cycle failed during initialization or execution: {exc}[/bold red]")
+        console.print(
+            f"[bold red]Cycle failed during initialization or execution: "
+            f"{escape(str(exc))}[/bold red]"
+        )
         return 1
     finally:
         lock.release()

@@ -400,9 +400,51 @@ def test_fetch_open_orders_fails_closed_when_exposure_price_is_missing(monkeypat
              "filled_qty": "0", "asset_class": "us_equity"},
         ])),
     )
-    result = account_data.fetch_open_orders({"AAPL": 200})
+    result = account_data.fetch_open_orders(
+        {"AAPL": 200},
+        latest_price_fetcher=lambda symbol: account_data.LatestPriceResult(
+            ok=False, reason="latest trade unavailable"
+        ),
+    )
     assert result.ok is False
     assert "incomplete open-order exposure data" in result.reason
+
+
+def test_accepted_unfilled_market_order_uses_fresh_price_estimate(monkeypatch):
+    """Regression for the first fresh-account paper order: Alpaca reports an
+    accepted market order with no limit price and no fill price yet.
+    """
+    monkeypatch.setattr(
+        account_data,
+        "_fetch_open_orders_raw",
+        lambda timeout, limit: [{
+            "id": "accepted-aapl",
+            "symbol": "AAPL",
+            "side": "buy",
+            "qty": "1",
+            "filled_qty": "0",
+            "limit_price": None,
+            "filled_avg_price": None,
+            "status": "accepted",
+            "asset_class": "us_equity",
+        }],
+    )
+    fetched = []
+
+    result = account_data.fetch_open_orders(
+        {},
+        latest_price_fetcher=lambda symbol: (
+            fetched.append(symbol),
+            account_data.LatestPriceResult(ok=True, price=325.25),
+        )[1],
+    )
+
+    assert result.ok is True
+    assert fetched == ["AAPL"]
+    assert result.aggregate_outstanding_notional == pytest.approx(325.25)
+    assert result.orders[0].unit_price == pytest.approx(325.25)
+    assert result.orders[0].exposure_price_source == "fresh_latest_trade_estimate"
+    assert result.orders[0].exposure_price_is_estimate is True
 
 
 def test_fetch_open_orders_fails_closed_when_page_may_be_incomplete(monkeypatch):

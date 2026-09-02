@@ -159,12 +159,50 @@ def test_compute_target_quantities():
     assert targets["MSFT"] == 3
 
 
-def test_compute_target_quantities_enforces_minimum_one_share():
+def test_compute_target_quantities_excludes_unaffordable_asset():
     weights = {"AAPL": 0.1}
     prices = {"AAPL": 5000.0}
-    # $800 * 0.1 = $80 budget, but min 1 share enforced
+    # $800 * 0.1 = $80 cannot afford one share; forcing one would exceed budget.
     targets = core_strategy.compute_target_quantities(weights, prices, total_budget_usd=800.0)
-    assert targets["AAPL"] == 1
+    assert targets["AAPL"] == 0
+
+
+def test_compute_target_quantities_live_11_asset_prices_respect_1000_budget():
+    """Regression for the fresh-account dry run that proposed $4,376.66
+    against an explicit $1,000 budget by forcing one share of every asset.
+    """
+    weights = {
+        "AAPL": 0.08554274702828055,
+        "MSFT": 0.06494828340091717,
+        "SPY": 0.19962213101088036,
+        "QQQ": 0.10573292658748729,
+        "GD": 0.12048574443583628,
+        "CACI": 0.049369078528938466,
+        "ACN": 0.045006244114565996,
+        "LDOS": 0.06827806648948505,
+        "NOC": 0.0970893786280252,
+        "BAH": 0.0649814389370096,
+        "J": 0.09894396083857429,
+    }
+    prices = {
+        "AAPL": 325.25,
+        "MSFT": 501.19,
+        "SPY": 761.63,
+        "QQQ": 707.65,
+        "GD": 369.43,
+        "CACI": 629.61,
+        "ACN": 188.14,
+        "LDOS": 139.28,
+        "NOC": 532.80,
+        "BAH": 75.335,
+        "J": 146.34,
+    }
+
+    targets = core_strategy.compute_target_quantities(weights, prices, 1_000.0)
+    planned_notional = sum(targets[symbol] * prices[symbol] for symbol in targets)
+
+    assert planned_notional <= 1_000.01
+    assert targets == {symbol: 0 for symbol in prices}
 
 
 def test_compute_rebalance_orders_drift_thresholding():
@@ -481,7 +519,13 @@ def test_basket_orders_clear_the_real_default_policy(tmp_path):
         return []
 
     engine, log_path = _real_policy_engine(tmp_path)
-    proxy = build_proxy(upstream, policy_engine=engine)
+    proxy = build_proxy(
+        upstream,
+        policy_engine=engine,
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
 
     prices = {s: 100.0 + i * 50 for i, s in enumerate(core_strategy.BASKET)}
     bars_fetcher = _fake_bars_fetcher(prices)
@@ -492,7 +536,7 @@ def test_basket_orders_clear_the_real_default_policy(tmp_path):
                     client,
                     bars_fetcher=bars_fetcher,
                     current_positions={s: 0 for s in core_strategy.BASKET},
-                    total_budget_usd=800.0,
+                    total_budget_usd=8_000.0,
                 include_options_overlay=False,
             )
 
@@ -725,7 +769,13 @@ def test_unpriceable_symbol_is_skipped_not_fatal(tmp_path):
         return {"order_id": f"fake-{symbol}", "status": "accepted"}
 
     engine, _ = _real_policy_engine(tmp_path)
-    proxy = build_proxy(upstream, policy_engine=engine)
+    proxy = build_proxy(
+        upstream,
+        policy_engine=engine,
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
 
     # Price every basket name except the first.
     priced = {s: 100.0 for s in core_strategy.BASKET[1:]}
@@ -736,7 +786,7 @@ def test_unpriceable_symbol_is_skipped_not_fatal(tmp_path):
             return await core_strategy.place_basket_orders(
                 client,
                 bars_fetcher=bars_fetcher,
-                total_budget_usd=800.0,
+                    total_budget_usd=8_000.0,
                 current_positions={s: 0 for s in core_strategy.BASKET},
             )
 
@@ -751,9 +801,8 @@ def test_unpriceable_symbol_is_skipped_not_fatal(tmp_path):
     assert set(received) == set(core_strategy.BASKET[1:])
 
 
-def test_place_basket_orders_includes_scheduled_options_overlay(tmp_path, monkeypatch):
-    """When include_options_overlay is enabled (default), place_basket_orders
-    proposes a protective put on the largest position in addition to stock rebalancing."""
+def test_scheduled_options_overlay_is_stopped_by_global_option_block(tmp_path, monkeypatch):
+    """The obsolete autonomous overlay may propose, but can never forward."""
     _patch_contract_resolver(monkeypatch)
     stock_orders: list[dict] = []
     option_orders: list[dict] = []
@@ -785,7 +834,13 @@ def test_place_basket_orders_includes_scheduled_options_overlay(tmp_path, monkey
         return {"order_id": f"fake-opt-{symbol}", "status": "accepted"}
 
     engine, log_path = _real_policy_engine(tmp_path)
-    proxy = build_proxy(upstream, policy_engine=engine)
+    proxy = build_proxy(
+        upstream,
+        policy_engine=engine,
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
 
     # Give AAPL higher value so it is the largest position
     prices = {s: 100.0 for s in core_strategy.BASKET}
@@ -798,7 +853,7 @@ def test_place_basket_orders_includes_scheduled_options_overlay(tmp_path, monkey
                 client,
                 bars_fetcher=bars_fetcher,
                 current_positions={s: 0 for s in core_strategy.BASKET},
-                total_budget_usd=800.0,
+                    total_budget_usd=8_000.0,
                 include_options_overlay=True,
             )
 
@@ -812,10 +867,13 @@ def test_place_basket_orders_includes_scheduled_options_overlay(tmp_path, monkey
     for a in stock_attempts:
         assert a.forwarded
 
-    # 1 option overlay attempt
+    # The strategy still constructs its obsolete overlay, but the proxy-level
+    # policy prohibition stops it before the fake upstream handler.
     option_attempt = next(a for a in attempts if a.symbol not in core_strategy.BASKET)
     assert option_attempt.qty >= 1
-    assert "scheduled options overlay" in option_attempt.detail.lower()
+    assert not option_attempt.forwarded
+    assert "option-orders-disabled" in option_attempt.detail
+    assert option_orders == []
 
 
 def test_scheduled_overlay_writes_provenance_record_before_real_verdict(tmp_path, monkeypatch):
@@ -867,7 +925,7 @@ def test_scheduled_overlay_writes_provenance_record_before_real_verdict(tmp_path
                 client,
                 bars_fetcher=bars_fetcher,
                 current_positions={s: 0 for s in core_strategy.BASKET},
-                total_budget_usd=800.0,
+                    total_budget_usd=8_000.0,
                 include_options_overlay=True,
                 audit_writer=engine.audit_writer,
             )
@@ -984,52 +1042,41 @@ def test_read_dynamic_policy_config_falls_back_to_static_notional_cap_when_equit
     assert config["notional_cap_max_usd"] == pytest.approx(5_000.0)
 
 
-def test_fetch_current_positions_formats():
-    """Verify fetch_current_positions correctly parses both flat list responses
-    and wrapped dictionary responses (e.g. from alpaca-mcp-server)."""
-    # 1. Flat list format
-    flat_upstream = FastMCP("fake-alpaca-flat")
+def test_fetch_current_positions_reuses_authoritative_reader(monkeypatch):
+    expected = account_data.PositionsResult(
+        ok=True,
+        quantities={"SPY": 58.0, "QQQ": 32.0, "AAPL": 5.0},
+    )
+    calls = []
 
-    @flat_upstream.tool
-    def get_all_positions() -> list[dict]:
-        return [
-            {"symbol": "SPY", "qty": "10"},
-            {"symbol": "AAPL", "qty": "5.0"},
-        ]
+    def fake_fetch_positions(*, cache_ttl_seconds):
+        calls.append(cache_ttl_seconds)
+        return expected
 
-    async def run_flat():
-        async with Client(flat_upstream) as client:
-            return await core_strategy.fetch_current_positions(client)
+    monkeypatch.setattr(account_data, "fetch_positions", fake_fetch_positions)
 
-    flat_positions = asyncio.run(run_flat())
-    assert flat_positions["SPY"] == 10
-    assert flat_positions["AAPL"] == 5
-    assert flat_positions["MSFT"] == 0
-    assert flat_positions["QQQ"] == 0
+    positions = asyncio.run(core_strategy.fetch_current_positions(object()))
 
-    # 2. Wrapped dict format
-    wrapped_upstream = FastMCP("fake-alpaca-wrapped")
+    assert calls == [0]
+    assert positions["SPY"] == 58
+    assert positions["QQQ"] == 32
+    assert positions["AAPL"] == 5
+    assert positions["MSFT"] == 0
 
-    @wrapped_upstream.tool
-    def get_all_positions() -> dict:
-        return {
-            "_alpaca_mcp_security": {},
-            "data": {
-                "result": [
-                    {"symbol": "SPY", "qty": "58"},
-                    {"symbol": "QQQ", "qty": "32"},
-                    {"symbol": "AAPL", "qty": "58"},
-                    {"symbol": "MSFT", "qty": "27"},
-                ]
-            },
-        }
 
-    async def run_wrapped():
-        async with Client(wrapped_upstream) as client:
-            return await core_strategy.fetch_current_positions(client)
+@pytest.mark.parametrize(
+    "result",
+    [
+        account_data.PositionsResult(ok=False, reason="position query failed"),
+        account_data.PositionsResult(ok=True, quantities=None),
+    ],
+)
+def test_fetch_current_positions_fails_closed(result, monkeypatch):
+    monkeypatch.setattr(
+        account_data,
+        "fetch_positions",
+        lambda *, cache_ttl_seconds: result,
+    )
 
-    wrapped_positions = asyncio.run(run_wrapped())
-    assert wrapped_positions["SPY"] == 58
-    assert wrapped_positions["QQQ"] == 32
-    assert wrapped_positions["AAPL"] == 58
-    assert wrapped_positions["MSFT"] == 27
+    with pytest.raises(RuntimeError, match="position query failed|quantities unavailable"):
+        asyncio.run(core_strategy.fetch_current_positions(object()))

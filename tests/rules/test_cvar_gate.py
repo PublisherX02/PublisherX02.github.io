@@ -281,3 +281,17 @@ def test_lookback_days_config_is_passed_to_fetcher():
     )
 
     assert calls == [("MSFT", 30)]
+
+
+def test_sell_order_is_exempt_as_deleveraging():
+    rule, calls = _rule(
+        BarsResult(ok=False, reason="must not fetch"),
+        cvar_max_loss_pct_of_equity=0.01,
+    )
+    outcome = rule.check(
+        "place_stock_order",
+        {"symbol": "AAPL", "side": "sell", "qty": "10", "limit_price": "100"},
+        {},
+    )
+    assert not outcome.triggered
+    assert calls == []

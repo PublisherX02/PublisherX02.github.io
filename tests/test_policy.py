@@ -25,6 +25,12 @@ def test_from_yaml_loads_default_policy():
     assert len(engine.rules) == 22
 
 
+def test_from_yaml_runs_catchall_coverage_validation():
+    with patch("firewall.policy.validate_catchall_coverage") as validate:
+        PolicyEngine.from_yaml("policies/default.yaml")
+    validate.assert_called_once()
+
+
 def test_from_yaml_bars_fetcher_reaches_every_bars_aware_rule():
     """The shared bars_fetcher injection point (policy.py's
     _BARS_FETCHER_AWARE_RULE_TYPES) must reach cvar_gate, pct_of_adv,
@@ -56,6 +62,55 @@ def test_from_yaml_without_bars_fetcher_rules_use_their_own_default():
 
     cvar_rule = next(r for r in engine.rules if isinstance(r, CVaRGateRule))
     assert cvar_rule._bars_fetcher == cvar_rule._fetch_bars
+
+
+@pytest.mark.parametrize(
+    ("tool_name", "arguments"),
+    [
+        (
+            "place_option_order",
+            {
+                "legs": [
+                    {"symbol": "AAPL261218C00300000", "side": "buy", "ratio_qty": 1}
+                ],
+                "quantity": 1_000_000,
+                "order_type": "market",
+                "time_in_force": "day",
+            },
+        ),
+        (
+            "place_stock_order",
+            {
+                "legs": [
+                    {"symbol": "AAPL261218C00300000", "side": "buy", "ratio_qty": 1}
+                ],
+                "quantity": 1,
+            },
+        ),
+        (
+            "place_stock_order",
+            {"symbol": "AAPL261218C00300000", "side": "buy", "qty": "1"},
+        ),
+        (
+            "place_stock_order",
+            {"symbol": "AAPL", "order_class": "mleg", "quantity": 1},
+        ),
+    ],
+)
+def test_option_orders_are_unconditionally_hard_blocked(tool_name, arguments):
+    """Named, current-schema, legacy-schema, and disguised option orders
+    must all stop at the policy boundary even with an otherwise empty policy.
+    """
+    verdict = PolicyEngine(rules=[], version="option-disable-test").evaluate(
+        tool_name, arguments, {}
+    )
+
+    assert verdict.decision == "hard_block"
+    assert verdict.rule_id == "option-orders-disabled"
+    assert verdict.reason == (
+        "option orders are unconditionally disabled at the firewall boundary "
+        "until their upstream schema and risk controls are rebuilt and verified."
+    )
 
 
 def test_gtc_order_hard_blocked_with_correct_reason_even_without_account_equity():
@@ -106,8 +161,7 @@ def test_near_dated_single_leg_option_order_hits_expiry_floor_not_allowlist():
     )
 
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "option-expiry-floor"
-    assert "contract expiration within 7 days" in verdict.reason
+    assert verdict.rule_id == "option-orders-disabled"
 
 
 def test_audit_scenario_priceless_multi_leg_order_hard_blocks():
@@ -127,11 +181,7 @@ def test_audit_scenario_priceless_multi_leg_order_hard_blocks():
         {},
     )
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "unsupported-order-shape"
-    assert verdict.reason == (
-        "bracket/OCO/multi-leg order shapes are not yet risk-assessed "
-        "by this firewall and are blocked until support exists."
-    )
+    assert verdict.rule_id == "option-orders-disabled"
 
 
 def test_wide_spread_single_leg_market_order_hits_spread_guard_not_allowlist():
@@ -165,9 +215,8 @@ def test_wide_spread_single_leg_market_order_hits_spread_guard_not_allowlist():
         )
 
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "option-spread-guard"
-    assert "relative spread 20.0% exceeds maximum 15.0%" in verdict.reason
-    assert fake.called
+    assert verdict.rule_id == "option-orders-disabled"
+    assert not fake.called
 
 
 def test_audit_scenario_stock_bracket_order_hard_blocks():
@@ -236,6 +285,38 @@ def test_oto_order_hard_blocks():
     )
 
 
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        {"order_class": "  BrAcKeT  "},
+        {"order_class": " MLEG "},
+        {"legs": []},
+        {"legs": None},
+        {"take_profit": None},
+        {"stop_loss": {}},
+    ],
+)
+def test_unsupported_order_shapes_fail_closed_on_structure_presence(arguments):
+    """Partial/malformed shapes cannot evade the boundary by omitting values."""
+    verdict = PolicyEngine(rules=[], version="shape-disable-test").evaluate(
+        "place_stock_order", arguments, {}
+    )
+
+    assert verdict.decision == "hard_block"
+    assert verdict.rule_id in {"option-orders-disabled", "unsupported-order-shape"}
+
+
+def test_disguised_priceless_option_order_hard_blocks_by_occ_payload_shape():
+    verdict = PolicyEngine(rules=[], version="option-disable-test").evaluate(
+        "submit_asset_transaction",
+        {"symbol": "AAPL991231P00220000", "side": "buy", "qty": "1"},
+        {},
+    )
+
+    assert verdict.decision == "hard_block"
+    assert verdict.rule_id == "option-orders-disabled"
+
+
 def test_option_sell_order_hits_sell_guard_regardless_of_origin():
     """Proves option-sell-guard is a live, registered RULE_TYPES entry
     evaluated by PolicyEngine.evaluate() for a bare place_option_order
@@ -251,7 +332,7 @@ def test_option_sell_order_hits_sell_guard_regardless_of_origin():
     )
 
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "option-sell-guard"
+    assert verdict.rule_id == "option-orders-disabled"
 
 
 def test_thin_delta_single_leg_option_order_hits_net_delta_floor():
@@ -286,9 +367,8 @@ def test_thin_delta_single_leg_option_order_hits_net_delta_floor():
         )
 
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "net-delta-floor"
-    assert "minimum structural threshold" in verdict.reason
-    assert fake.called
+    assert verdict.rule_id == "option-orders-disabled"
+    assert not fake.called
 
 
 def test_expensive_option_buy_hits_hedge_cost_cap():
@@ -319,9 +399,8 @@ def test_expensive_option_buy_hits_hedge_cost_cap():
         )
 
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "hedge-cost-cap"
-    assert "proposed hedge costs $3,000.00" in verdict.reason
-    assert fake_cost.called
+    assert verdict.rule_id == "option-orders-disabled"
+    assert not fake_cost.called
 
 
 def test_call_buy_hits_regime_guard_when_state_is_wired(monkeypatch):
@@ -379,8 +458,7 @@ def test_call_buy_hits_regime_guard_when_state_is_wired(monkeypatch):
     )
 
     assert verdict.decision == "hard_block"
-    assert verdict.rule_id == "hedge-regime-call-guard"
-    assert "authorized hedging structures are limited to protective puts or collars" in verdict.reason
+    assert verdict.rule_id == "option-orders-disabled"
 
 
 def test_cooldown_after_loss_writes_distinct_entry_and_exit_audit_records(tmp_path):

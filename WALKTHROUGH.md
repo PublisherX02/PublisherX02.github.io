@@ -1,6 +1,14 @@
 # System Walkthrough & Demo Guide
 
-Run the full autonomous trading and risk-governance system end-to-end with a single command.
+Run the autonomous trading and risk-governance system end-to-end with a single command.
+
+> **Verification status (2026-09-02):** this guide has not yet passed a
+> zero-context reader test. No person unfamiliar with the repository has run
+> only these instructions and independently explained the result. That human
+> usability check remains an explicitly disclosed gap. The post-account-swap
+> full end-to-end run described here also has not yet been repeated against the
+> current order-shape boundary; do not cite the historical transcript below as
+> current-run evidence.
 
 **Expect it to take several minutes.** Most of that is a deliberate ~90+ second pause between order chunks for rate-limit safety (`order_rate_throttle`) -- the run is not hung, it's pacing itself.
 
@@ -16,7 +24,12 @@ python -m run_agent
 
 *(Alternative shortcuts: `python run_agent.py`, `./run_demo.sh`, or `run_demo.bat`)*
 
-This single command initializes the MCP proxy firewall, connects to the real Alpaca paper trading account, pulls live market data, calculates inverse-volatility risk-parity allocations, enforces pre-trade risk policies, submits orders, and verifies the tamper-evident audit trail.
+This command initializes the MCP proxy firewall, connects to the configured
+Alpaca paper account, pulls live market data, calculates inverse-volatility
+risk-parity allocations, evaluates pre-trade policy, and verifies the audit
+chain. The default is **dry-run** and suppresses broker mutations. A real paper
+submission requires the explicit `--execute` flag and an exact
+`--expected-account-id`; see README's competition-safe execution modes.
 
 ---
 
@@ -52,7 +65,9 @@ STEP 3: Live Firewall Policy Enforcement & Order Execution
        Audit correlation: 2026-08-31T20:49:53Z SELL 6 SPY
 
 STEP 4: Scheduled Options Overlay (Standing Portfolio Insurance)
-  Proposes a protective put option on the largest basket holding.
+  May compute and record a protective-put proposal. Any resulting option-order
+  submission is unconditionally hard-blocked at the policy boundary pending an
+  upstream schema and risk-control rebuild.
 
 STEP 5: Resulting Basket State & Audit Verification
   Displays final holdings table, market value, and portfolio percentage.
@@ -69,19 +84,25 @@ STEP 6: AI Market Commentary (Informational / Non-Trading)
 
 ## 3. What a Blocked Order Looks Like (and Why It's Working Correctly)
 
-When a proposed order violates a risk limit, the firewall rejects it before it ever touches the market. The block you'll almost certainly see on any given run today is **`net-delta-floor`**, in STEP 4, rejecting the scheduled protective-put overlay:
+When a proposed order violates a risk limit, the firewall rejects it before it
+ever touches the market. For any option-order submission, the current boundary
+result is **`option-orders-disabled`**; downstream option rules such as
+`net-delta-floor` do not evaluate that call:
 
 ```text
 STEP 4: Scheduled Options Overlay (Standing Portfolio Insurance)
   [+] Proposed Overlay: BUY 1 PUT contract(s) on SPY (SPY260925P00731000)
       Strike: $731.00 | Expiry: 2026-09-25 | Rationale: standing portfolio insurance
-    Option Order Filtered / Blocked: BLOCKED by rule 'net-delta-floor':
-       proposed hedge exceeds neutral delta -- this is a directional short,
-       not a hedge (net delta -35.32 < floor -10.00)
-    (Standing insurance proposal recorded in audit log; options trading restrictions applied).
+    Option Order Filtered / Blocked: BLOCKED by rule 'option-orders-disabled':
+       option orders are unconditionally disabled at the firewall boundary
+       until their upstream schema and risk controls are rebuilt and verified.
+    (Standing insurance proposal recorded in audit log; no option order forwarded.)
 ```
 
-This is the **common case** -- it fires on effectively every run today (13 occurrences in this project's own audit history at time of writing), because the firewall can't currently see the equity shares underlying the option position (a disclosed gap -- see AUDIT.md), so it can't confirm the put is actually delta-neutral and blocks it rather than risk waving through a naked directional bet.
+This is a categorical scope boundary, not evidence that the downstream options
+overlay is functional. Contract resolution and proposal generation may run,
+but option execution is disabled pending a schema rebuild, verified by direct
+policy probes and disclosed here.
 
 A rarer example, seen twice historically, is a stock order tripping the position cap:
 
@@ -93,7 +114,10 @@ A rarer example, seen twice historically, is a stock order tripping the position
 ```
 
 ### Why this is a feature, not a bug:
-The firewall is a **security and governance layer**. A blocked order is proof that the system successfully stopped an autonomous agent from exceeding portfolio risk thresholds (e.g. over-concentrating in one stock, or -- as with `net-delta-floor` above -- placing an options order that isn't actually the hedge it claims to be). The block protects capital and enforces institutional risk boundaries.
+The firewall is a **security and governance layer**. A blocked order shows that
+this particular call was stopped before forwarding. Stock limits enforce
+configured risk boundaries; option calls are currently stopped by the broader
+temporary disable boundary, not validated as safe hedges.
 
 ---
 

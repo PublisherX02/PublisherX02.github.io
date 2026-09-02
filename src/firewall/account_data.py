@@ -58,6 +58,8 @@ import urllib.request
 from dataclasses import dataclass
 from typing import Callable
 
+from firewall.market_data import LatestPriceResult, fetch_stock_latest_price
+
 _TRADING_API_PAPER_URL = "https://paper-api.alpaca.markets"
 
 # Must match firewall.proxy._UPSTREAM_PAPER_TRUE_VALUES exactly: both read
@@ -142,6 +144,8 @@ class OpenOrder:
     unit_price: float
     outstanding_notional: float
     asset_class: str
+    exposure_price_source: str = "broker_order_price"
+    exposure_price_is_estimate: bool = False
 
 
 @dataclass(frozen=True)
@@ -178,6 +182,9 @@ def exposure_snapshot(positions: PositionsResult, open_orders: OpenOrdersResult)
     )
     body = {
         "positions": {k: float(v) for k, v in sorted(positions.quantities.items())},
+        "current_prices": {
+            k: float(v) for k, v in sorted((positions.current_prices or {}).items())
+        },
         "pending_signed_qty": {k: float(v) for k, v in sorted(pending.items())},
         "open_order_ids": sorted(order.order_id for order in open_orders.orders),
     }
@@ -208,6 +215,9 @@ def fetch_consistent_exposure_snapshot(
         return {"ok": False, "reason": after.reason or "position re-check unavailable"}
     if before.quantities != after.quantities:
         return {"ok": False, "reason": "positions changed during open-order reconciliation"}
+    # Preserve independently supplied quote prices in the final snapshot.
+    # Positions only contain current_price for symbols already held.
+    after.current_prices = {**(after.current_prices or {}), **prices}
     snapshot = exposure_snapshot(after, orders)
     snapshot["aggregate_outstanding_notional"] = orders.aggregate_outstanding_notional
     snapshot["open_orders"] = orders.orders
@@ -297,7 +307,8 @@ def _fetch_open_orders_raw(timeout_seconds: float, limit: int) -> list:
 
 
 def fetch_open_orders(
-    prices: dict[str, float], *, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS, limit: int = 500
+    prices: dict[str, float], *, timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS, limit: int = 500,
+    latest_price_fetcher: Callable[[str], LatestPriceResult] = fetch_stock_latest_price,
 ) -> OpenOrdersResult:
     """Fetch every open Alpaca order and fail closed on incomplete exposure data.
 
@@ -313,6 +324,7 @@ def fetch_open_orders(
         if len(payload) >= limit:
             raise ValueError(f"response reached page limit {limit}; completeness unknown")
         parsed: list[OpenOrder] = []
+        latest_price_cache: dict[str, LatestPriceResult] = {}
         for index, raw in enumerate(payload):
             if not isinstance(raw, dict):
                 raise ValueError(f"order {index} is not an object")
@@ -329,7 +341,35 @@ def fetch_open_orders(
                 raise ValueError(f"order {order_id} has invalid qty/filled_qty")
             if remaining_qty == 0:
                 continue
-            raw_price = raw.get("limit_price") or raw.get("stop_price") or prices.get(symbol)
+            if raw.get("limit_price") is not None:
+                raw_price = raw["limit_price"]
+                price_source = "limit_price"
+                price_is_estimate = False
+            elif raw.get("stop_price") is not None:
+                raw_price = raw["stop_price"]
+                price_source = "stop_price"
+                price_is_estimate = False
+            elif prices.get(symbol) is not None:
+                raw_price = prices[symbol]
+                price_source = "supplied_market_price_estimate"
+                price_is_estimate = True
+            elif asset_class in {"us_equity", "equity"}:
+                latest = latest_price_cache.get(symbol)
+                if latest is None:
+                    latest = latest_price_fetcher(symbol)
+                    latest_price_cache[symbol] = latest
+                if not latest.ok or latest.price is None:
+                    raise ValueError(
+                        f"order {order_id} has no usable exposure price for {symbol}; "
+                        f"fresh latest-trade estimate failed: {latest.reason or 'unknown error'}"
+                    )
+                raw_price = latest.price
+                price_source = "fresh_latest_trade_estimate"
+                price_is_estimate = True
+            else:
+                raw_price = None
+                price_source = "unavailable"
+                price_is_estimate = False
             if raw_price is None:
                 raise ValueError(f"order {order_id} has no usable exposure price for {symbol}")
             unit_price = float(raw_price)
@@ -345,6 +385,8 @@ def fetch_open_orders(
                 unit_price=unit_price,
                 outstanding_notional=notional,
                 asset_class=asset_class,
+                exposure_price_source=price_source,
+                exposure_price_is_estimate=price_is_estimate,
             ))
         return OpenOrdersResult(
             ok=True,

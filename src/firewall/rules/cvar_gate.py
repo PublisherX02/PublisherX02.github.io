@@ -155,6 +155,8 @@ class CVaRGateRule(Rule):
         symbol = arguments.get(self.cfg.symbol_field)
         if not symbol:
             return RuleOutcome(False)
+        if str(arguments.get("side", "buy")).strip().lower() == "sell":
+            return RuleOutcome(False)
 
         notional = extract_notional(
             arguments, self.cfg.notional_field, self.cfg.qty_field, self.cfg.price_field

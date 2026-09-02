@@ -830,8 +830,11 @@ class DashboardHeader(Static):
                 basket_text.append(f"(tgt {tgt:.1%}{clip_badge})   ", style="#64748b")
             cash_w = basket_data.get("cash_w", 0.10)
             basket_text.append(f"CASH BUFFER: {cash_w:.1%}", style="dim #94a3b8")
+            if basket_data.get("status") != "live":
+                basket_text.append("  [STALE]", style="bold #f59e0b")
         else:
-            basket_text.append("AAPL: 18.7% tgt │ MSFT: 13.9% tgt │ QQQ: 23.4% tgt │ SPY: 27.8% [CAPPED 25%] tgt", style="#94a3b8")
+            status = (basket_data or {}).get("status", "loading").upper()
+            basket_text.append(f"{status} — no verified allocation data", style="bold #f59e0b")
 
         self.query_one("#basket-weights-bar", Static).update(basket_text)
 
@@ -1220,7 +1223,7 @@ class FirewallDashboardApp(App):
         self._selected_record: AuditRecordItem | None = None
         self._chain_count: int = 0
         self._bad_idx: int | None = None
-        self._basket_cache: dict[str, Any] = {}
+        self._basket_cache: dict[str, Any] = {"status": "loading"}
         self._performance_summary: dict[str, Any] = {}
         self._lifecycle_summary: dict[str, Any] = load_lifecycle_summary()
         self._throttle_count: int = 0
@@ -1275,9 +1278,9 @@ class FirewallDashboardApp(App):
         # Trigger background commentary generation on launch
         self.trigger_market_commentary_refresh()
 
-    @work(exclusive=True)
-    async def trigger_market_commentary_refresh(self) -> None:
-        """Asynchronously refresh the AI market commentary in background."""
+    @work(exclusive=True, thread=True)
+    def trigger_market_commentary_refresh(self) -> None:
+        """Refresh cached commentary off the UI event loop."""
         if get_latest_cached_brief is None:
             return
         # Use the exact same context builder as the cycle, but perform only
@@ -1287,7 +1290,9 @@ class FirewallDashboardApp(App):
         self._latest_market_brief = get_latest_cached_brief()
         self._latest_cycle_summary = summarize_cycle_artifact(load_latest_cycle_artifact())
         self._lifecycle_summary = load_lifecycle_summary()
-        self._sync_ui_components(self.watcher._unresolved_records)
+        self.call_from_thread(
+            self._sync_ui_components, self.watcher._unresolved_records
+        )
 
     def refresh_policy_config(self) -> None:
         """(Re-)load real thresholds off `self.policy_path` -- the actual
@@ -1446,13 +1451,16 @@ class FirewallDashboardApp(App):
             # hardcoded guess) now happens in `_sync_ui_components`, which
             # also has the real threshold from `self._policy_cfg`.
             pnl_res = account_data.fetch_session_pnl()
-            if pnl_res.ok:
-                self.account_equity = pnl_res.equity
-                self.session_pnl_usd = pnl_res.session_pnl_usd
+            if not pnl_res.ok or pnl_res.equity is None:
+                raise RuntimeError(pnl_res.reason or "account equity unavailable")
+            self.account_equity = pnl_res.equity
+            self.session_pnl_usd = pnl_res.session_pnl_usd
 
             # 2. Fetch Positions
             pos_res = account_data.fetch_positions()
-            positions_map = pos_res.positions or {} if pos_res.ok else {}
+            if not pos_res.ok or pos_res.positions is None:
+                raise RuntimeError(pos_res.reason or "positions unavailable")
+            positions_map = pos_res.positions
             self.positions_count = len(positions_map)
 
             benchmark_closes = None
@@ -1475,6 +1483,8 @@ class FirewallDashboardApp(App):
                     bars = fetch_daily_bars(sym, 90)
                     if bars.ok and len(bars.closes) >= 2:
                         vols[sym] = core_strategy.compute_realized_volatility(bars.closes)
+                if set(vols) != set(core_strategy.BASKET):
+                    raise RuntimeError("incomplete basket market data")
 
                 raw_weights = core_strategy.compute_inverse_vol_weights(vols)
                 equity = self.account_equity or 100000.0
@@ -1506,11 +1516,20 @@ class FirewallDashboardApp(App):
                 }
 
                 self._basket_cache = {
+                    "status": "live",
+                    "fetched_at": time.time(),
                     "weights": weights_summary,
                     "cash_w": max(0.0, 1.0 - sum(capped_weights.values())),
                 }
-        except Exception:
-            pass
+        except Exception as exc:
+            if "weights" in self._basket_cache:
+                self._basket_cache["status"] = "stale"
+                self._basket_cache["error"] = str(exc)
+            else:
+                self._basket_cache = {
+                    "status": "unavailable",
+                    "error": str(exc),
+                }
 
     def verify_chain_periodically(self) -> None:
         """Verifies the SHA-256 cryptographic chain of the audit log."""

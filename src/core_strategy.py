@@ -163,7 +163,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import json
 import math
 import time
 from dataclasses import dataclass
@@ -309,17 +308,33 @@ def compute_target_quantities(
 ) -> dict[str, int]:
     """Calculate target share quantities for each asset from target weights and prices.
 
-    Minimum 1 share is enforced for each asset in the basket to guarantee non-flat
-    demonstration positions.
+    Whole-share targets are rounded down. If a symbol's allocated dollars cannot
+    afford one share, its target is zero for this cycle; forcing one share would
+    silently violate the aggregate budget.
+
+    The aggregate notional is independently checked after sizing and before the
+    targets can reach order generation. This is intentionally redundant with
+    floor rounding so future sizing changes fail closed instead of overspending.
     """
+    if not math.isfinite(total_budget_usd) or total_budget_usd < 0:
+        raise ValueError(f"total budget must be finite and non-negative, got {total_budget_usd!r}")
     targets = {}
     for sym, weight in weights.items():
         price = prices.get(sym, 0.0)
         if not math.isfinite(price) or price <= 0:
             raise ValueError(f"cannot size an order against non-positive price {price!r} for {sym}")
         budget_for_asset = total_budget_usd * weight
-        qty = max(1, math.floor(budget_for_asset / price))
+        qty = max(0, math.floor(budget_for_asset / price))
         targets[sym] = qty
+
+    planned_notional = sum(targets[sym] * prices[sym] for sym in targets)
+    tolerance = max(0.01, total_budget_usd * 1e-9)
+    if planned_notional > total_budget_usd + tolerance:
+        raise ValueError(
+            "target sizing exceeds explicit aggregate budget: "
+            f"planned ${planned_notional:,.2f} > budget ${total_budget_usd:,.2f} "
+            f"(tolerance ${tolerance:,.2f}); refusing to generate orders"
+        )
     return targets
 
 
@@ -636,53 +651,17 @@ def option_tool_name() -> str:
 async def fetch_current_positions(
     client: Client, basket: tuple[str, ...] = BASKET
 ) -> dict[str, int]:
-    """Attempt to retrieve existing share counts for basket symbols from upstream.
+    """Return authoritative broker quantities using the shared fail-closed reader.
 
-    Falls back to 0 shares for any symbol if unqueried or unparseable.
+    ``client`` remains in the signature for compatibility with existing async
+    callers; position state comes from the same verified account-data reader
+    used by ``run_agent.py``, never from a separate MCP parsing path.
     """
-    positions = {s: 0 for s in basket}
-    try:
-        result = await client.call_tool("get_all_positions", {}, raise_on_error=False)
-    except Exception:
-        return positions
-
-    if getattr(result, "is_error", False):
-        return positions
-
-    content = getattr(result, "content", None) or []
-    if not content:
-        return positions
-    text = getattr(content[0], "text", None)
-    if not isinstance(text, str):
-        return positions
-
-    try:
-        data = json.loads(text)
-        items = []
-        if isinstance(data, list):
-            items = data
-        elif isinstance(data, dict):
-            inner = data.get("data")
-            if isinstance(inner, list):
-                items = inner
-            elif isinstance(inner, dict):
-                res = inner.get("result") or inner.get("positions")
-                if isinstance(res, list):
-                    items = res
-            elif "result" in data and isinstance(data["result"], list):
-                items = data["result"]
-        for item in items:
-            if isinstance(item, dict):
-                sym = item.get("symbol")
-                if sym in positions:
-                    qty_str = item.get("qty", "0")
-                    try:
-                        positions[sym] = int(float(qty_str))
-                    except (ValueError, TypeError):
-                        pass
-    except Exception:
-        pass
-    return positions
+    del client
+    result = account_data.fetch_positions(cache_ttl_seconds=0)
+    if not result.ok or result.quantities is None:
+        raise RuntimeError(result.reason or "broker position quantities unavailable")
+    return {symbol: int(float(result.quantities.get(symbol, 0.0))) for symbol in basket}
 
 
 async def place_basket_orders(
@@ -982,7 +961,6 @@ async def place_basket_orders(
             payload = build_market_order_payload(symbol, chunk_qty, side=side)
             payload["_firewall_reconciliation"] = {
                 "target_qty": target_qty,
-                "snapshot_fingerprint": snapshot["fingerprint"],
             }
 
             await pacer.before_submit()

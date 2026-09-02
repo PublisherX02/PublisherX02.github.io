@@ -6,6 +6,27 @@ import socket
 from firewall import market_data
 
 
+def test_fetch_stock_latest_price_parses_latest_trade_and_marks_success(monkeypatch):
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc_info):
+            return False
+
+        def read(self):
+            return b'{"trade":{"p":325.25}}'
+
+    monkeypatch.setattr(
+        market_data.urllib.request, "urlopen", lambda *a, **k: _FakeResponse()
+    )
+
+    result = market_data.fetch_stock_latest_price("AAPL")
+
+    assert result.ok is True
+    assert result.price == 325.25
+
+
 def test_timeout_returns_ok_false_not_a_raised_exception(monkeypatch):
     def _raise_timeout(*args, **kwargs):
         raise socket.timeout("timed out")

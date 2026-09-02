@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -19,9 +21,15 @@ from firewall.audit import (
     verify_chain,
 )
 from firewall.policy import PolicyEngine
-from firewall.proxy import FirewallMiddleware, PaperTradeGuardError, _alpaca_client, build_proxy
+from firewall.proxy import (
+    FirewallMiddleware, PaperTradeGuardError, _alpaca_client,
+    _normalize_real_upstream_quantity, _parse_order_result, build_proxy,
+)
 from firewall.rules.base import RuleConfig
 from firewall.rules.cvar_gate import CVaRGateRule
+from firewall.rules.order_rate_throttle import OrderRateThrottleRule
+from fastmcp.tools import ToolResult
+from mcp.types import TextContent
 
 
 def _default_test_bars_fetcher(symbol, lookback_days, **kwargs):
@@ -129,6 +137,68 @@ def make_fake_upstream() -> tuple[FastMCP, list[tuple[str, dict]]]:
     return upstream, received
 
 
+def test_raw_million_contract_option_order_never_reaches_upstream(tmp_path):
+    """Exact critical-audit reproduction using the current legs-based schema."""
+    upstream = FastMCP("fake-current-alpaca")
+    received: list[dict] = []
+
+    @upstream.tool
+    def place_option_order(
+        legs: list[dict],
+        quantity: int,
+        order_type: str,
+        time_in_force: str,
+    ) -> dict:
+        received.append(
+            {
+                "legs": legs,
+                "quantity": quantity,
+                "order_type": order_type,
+                "time_in_force": time_in_force,
+            }
+        )
+        return {"id": "must-never-exist", "status": "accepted"}
+
+    log_path = tmp_path / "audit.jsonl"
+    engine = PolicyEngine(
+        rules=[],
+        version="option-disable-test",
+        audit_writer=AuditLogWriter(log_path, session_id="option-disable-test"),
+    )
+    proxy = build_proxy(
+        upstream,
+        policy_engine=engine,
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
+    payload = {
+        "legs": [
+            {"symbol": "AAPL261218C00300000", "side": "buy", "ratio_qty": 1}
+        ],
+        "quantity": 1_000_000,
+        "order_type": "market",
+        "time_in_force": "day",
+    }
+
+    async def run():
+        async with Client(proxy) as client:
+            return await client.call_tool(
+                "place_option_order", payload, raise_on_error=False
+            )
+
+    result = asyncio.run(run())
+
+    assert result.is_error
+    assert "option-orders-disabled" in result.content[0].text
+    assert received == []
+    records = _read_records(log_path)
+    block_records = [r for r in records if r["rule_id"] == "option-orders-disabled"]
+    assert len(block_records) == 1
+    assert block_records[0]["forwarded"] is False
+    assert block_records[0]["upstream_status"] == "not_forwarded"
+
+
 def test_dry_run_suppresses_mutation_at_proxy_boundary(tmp_path):
     async def _runner():
         upstream, received = make_fake_upstream()
@@ -161,6 +231,398 @@ def test_dry_run_suppresses_mutation_at_proxy_boundary(tmp_path):
         assert records[-1]["upstream_status"] == "not_forwarded"
 
     asyncio.run(_runner())
+
+
+def test_dry_run_surfaces_deleveraging_exception_note(tmp_path):
+    async def _runner():
+        upstream, received = make_fake_upstream()
+        engine, _ = _real_policy_engine(tmp_path)
+        proxy = build_proxy(
+            upstream,
+            engine,
+            dry_run=True,
+            account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+                ok=True, session_pnl_usd=-1_500.0, equity=100_000.0
+            ),
+            positions_fetcher=lambda: account_data.PositionsResult(
+                ok=True,
+                positions={"AAPL": 1_000.0},
+                quantities={"AAPL": 10.0},
+                current_prices={"AAPL": 100.0},
+                fetched_at=time.time(),
+            ),
+            open_orders_fetcher=lambda prices: account_data.OpenOrdersResult(
+                ok=True, orders=(), aggregate_outstanding_notional=0.0
+            ),
+        )
+        async with Client(proxy) as client:
+            result = await client.call_tool(
+                "place_stock_order",
+                {
+                    "symbol": "AAPL",
+                    "side": "sell",
+                    "qty": "5",
+                    "client_order_id": "dry-deleveraging-1",
+                },
+                raise_on_error=False,
+            )
+
+        assert not result.is_error
+        assert received == []
+        notes = [getattr(item, "text", "") for item in result.content[1:]]
+        assert notes == [
+            "DELEVERAGING_EXCEPTION_ALLOW: drawdown killswitch is tripped; "
+            "plain-equity sell for AAPL is provably exposure-reducing "
+            "(broker_confirmed_held_qty=10, order_qty=5)"
+        ]
+
+    asyncio.run(_runner())
+
+
+def test_parallel_mutations_are_serialized_through_history_update():
+    upstream = FastMCP("blocking-upstream")
+    started = asyncio.Event()
+    release = asyncio.Event()
+    received: list[str] = []
+
+    @upstream.tool
+    async def place_stock_order(symbol: str, side: str, qty: str) -> dict:
+        received.append(symbol)
+        started.set()
+        await release.wait()
+        return {"data": {"result": {"id": f"order-{symbol}", "status": "accepted"}}}
+
+    rule = OrderRateThrottleRule(RuleConfig.model_validate({
+        "id": "order-rate-throttle", "type": "order_rate_throttle",
+        "enabled": True, "severity": "hard", "regulation_ref": None, "max_orders": 1,
+        "window_seconds": 60, "place_tool_match": ["place_stock_order"],
+    }))
+    proxy = build_proxy(
+        upstream, PolicyEngine([rule], version="concurrency-test"),
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
+
+    async def run():
+        async with Client(proxy) as client:
+            first = asyncio.create_task(client.call_tool(
+                "place_stock_order", {"symbol": "AAPL", "side": "buy", "qty": "1"},
+                raise_on_error=False,
+            ))
+            await started.wait()
+            second = asyncio.create_task(client.call_tool(
+                "place_stock_order", {"symbol": "MSFT", "side": "buy", "qty": "1"},
+                raise_on_error=False,
+            ))
+            await asyncio.sleep(0.05)
+            assert not second.done()
+            release.set()
+            return await first, await second
+
+    first, second = asyncio.run(run())
+    assert not first.is_error
+    assert second.is_error
+    assert "order-rate-throttle" in second.content[0].text
+    assert received == ["AAPL"]
+
+
+def test_concurrent_same_symbol_inside_multi_order_cycle_is_capped_without_fingerprint_self_block(
+    tmp_path,
+):
+    """One scenario reproducing the concurrency, fingerprint, and TTL windows."""
+    import yaml
+
+    raw = yaml.safe_load(Path("policies/default.yaml").read_text(encoding="utf-8"))
+    for rule in raw["rules"]:
+        if rule["id"] == "position-cap-per-symbol":
+            rule["max_usd_per_symbol"] = 10_000
+            rule["max_pct_of_equity"] = None
+        elif rule["id"] == "notional-cap-single-order":
+            rule["max_usd"] = 10_000
+            rule["max_pct_of_equity"] = None
+        elif rule["id"] in {"cvar-gate", "pct-of-adv"}:
+            rule["enabled"] = False
+    policy_path = tmp_path / "integrated_concurrency_policy.yaml"
+    policy_path.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    log_path = tmp_path / "audit.jsonl"
+    engine = PolicyEngine.from_yaml(
+        policy_path,
+        audit_writer=AuditLogWriter(log_path, session_id="integrated-concurrency"),
+        bars_fetcher=_default_test_bars_fetcher,
+    )
+
+    upstream = FastMCP("timed-multi-order-broker")
+    first_aapl_started = asyncio.Event()
+    timeline: list[dict] = []
+    accepted: list[tuple[str, float]] = []
+    position_reads: list[float] = []
+
+    def stamp(event: str, **fields):
+        timeline.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "monotonic": round(time.monotonic(), 6),
+            "event": event,
+            **fields,
+        })
+
+    @upstream.tool
+    async def place_stock_order(symbol: str, side: str, qty: str) -> dict:
+        numeric_qty = float(qty)
+        stamp("upstream_enter", symbol=symbol, qty=numeric_qty)
+        if symbol == "AAPL" and not first_aapl_started.is_set():
+            first_aapl_started.set()
+            # Keep the first broker call open while the other cycle calls
+            # are genuinely dispatched as concurrent asyncio tasks.
+            await asyncio.sleep(0.15)
+        accepted.append((symbol, numeric_qty))
+        stamp("upstream_accept", symbol=symbol, qty=numeric_qty)
+        return {"data": {"order": {
+            "id": f"accepted-{symbol}-{numeric_qty:g}", "status": "accepted"
+        }}}
+
+    def positions_fetcher():
+        position_reads.append(time.monotonic())
+        stamp("position_read", read=len(position_reads))
+        return account_data.PositionsResult(
+            ok=True,
+            positions={},
+            quantities={"AAPL": 0.0, "MSFT": 0.0, "SPY": 0.0},
+            current_prices={"AAPL": 100.0, "MSFT": 100.0, "SPY": 100.0},
+            fetched_at=time.time(),
+        )
+
+    proxy = build_proxy(
+        upstream,
+        engine,
+        positions_fetcher=positions_fetcher,
+        open_orders_fetcher=lambda prices: account_data.OpenOrdersResult(
+            ok=True, orders=(), aggregate_outstanding_notional=0.0
+        ),
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
+    fingerprint = "one-cycle-start-fingerprint"
+
+    def args(symbol: str, qty: int, target: int) -> dict:
+        return {
+            "symbol": symbol, "side": "buy", "qty": str(qty),
+            "_firewall_reconciliation": {
+                "target_qty": target, "snapshot_fingerprint": fingerprint,
+            },
+        }
+
+    async def run_cycle():
+        async with Client(proxy) as client:
+            first = asyncio.create_task(client.call_tool(
+                "place_stock_order", args("AAPL", 60, 100), raise_on_error=False
+            ), name="cycle-aapl-60")
+            await first_aapl_started.wait()
+            stamp("parallel_dispatch", calls=["AAPL-50", "MSFT-10", "SPY-10"])
+            rest = [
+                asyncio.create_task(client.call_tool(
+                    "place_stock_order", args("AAPL", 50, 100), raise_on_error=False
+                ), name="cycle-aapl-50"),
+                asyncio.create_task(client.call_tool(
+                    "place_stock_order", args("MSFT", 10, 10), raise_on_error=False
+                ), name="cycle-msft-10"),
+                asyncio.create_task(client.call_tool(
+                    "place_stock_order", args("SPY", 10, 10), raise_on_error=False
+                ), name="cycle-spy-10"),
+            ]
+            return [await first, *(await asyncio.gather(*rest))]
+
+    results = asyncio.run(run_cycle())
+    labels = ["AAPL-60", "AAPL-50", "MSFT-10", "SPY-10"]
+    outcomes = {
+        label: {
+            "blocked": result.is_error,
+            "detail": result.content[0].text,
+        }
+        for label, result in zip(labels, results)
+    }
+    accepted_aapl_notional = sum(qty * 100.0 for symbol, qty in accepted if symbol == "AAPL")
+    window_seconds = max(position_reads) - min(position_reads)
+
+    print("INTEGRATED_SCENARIO_TIMELINE=" + json.dumps(timeline, indent=2))
+    print("INTEGRATED_SCENARIO_OUTCOMES=" + json.dumps(outcomes, indent=2))
+    print("INTEGRATED_SCENARIO_SUMMARY=" + json.dumps({
+        "accepted": accepted,
+        "accepted_aapl_notional": accepted_aapl_notional,
+        "position_cap_usd": 10_000.0,
+        "position_read_window_seconds": round(window_seconds, 6),
+        "configured_cache_ttl_seconds": 5.0,
+    }, indent=2))
+
+    assert not outcomes["AAPL-60"]["blocked"]
+    assert outcomes["AAPL-50"]["blocked"]
+    assert "position-cap-per-symbol" in outcomes["AAPL-50"]["detail"]
+    assert "$11,000.00" in outcomes["AAPL-50"]["detail"]
+    assert not outcomes["MSFT-10"]["blocked"]
+    assert not outcomes["SPY-10"]["blocked"]
+    assert accepted_aapl_notional == 6_000.0
+    assert accepted_aapl_notional <= 10_000.0
+    assert window_seconds < 5.0
+
+
+def test_live_reconciliation_reader_forces_zero_ttl(monkeypatch):
+    cache_ttls: list[float] = []
+
+    def fake_positions(**kwargs):
+        cache_ttls.append(kwargs["cache_ttl_seconds"])
+        return account_data.PositionsResult(
+            ok=True, positions={}, quantities={"AAPL": 0.0},
+            current_prices={"AAPL": 100.0}, fetched_at=1.0,
+        )
+
+    monkeypatch.setattr(account_data, "fetch_positions", fake_positions)
+    middleware = FirewallMiddleware(
+        PolicyEngine([], version="fresh-reader-test"),
+        open_orders_fetcher=lambda prices: account_data.OpenOrdersResult(
+            ok=True, orders=(), aggregate_outstanding_notional=0.0
+        ),
+        is_real_upstream=True,
+    )
+    snapshot = account_data.fetch_consistent_exposure_snapshot(
+        {}, positions_fetcher=middleware._fresh_positions_fetcher,
+        open_orders_fetcher=middleware._open_orders_fetcher,
+    )
+    assert snapshot["ok"] is True
+    assert cache_ttls == [0, 0]
+
+
+def test_tripped_drawdown_deleveraging_exception_six_scenario_reproduction(tmp_path):
+    upstream = FastMCP("drawdown-deleveraging-broker")
+    accepted: list[dict] = []
+    timeline: list[dict] = []
+    position_reads: list[str] = []
+
+    def stamp(event: str, **fields):
+        timeline.append({
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            **fields,
+        })
+
+    @upstream.tool
+    def place_stock_order(symbol: str, side: str, qty: str) -> dict:
+        order = {"symbol": symbol, "side": side, "qty": float(qty)}
+        accepted.append(order)
+        stamp("upstream_accept", **order)
+        return {"order": {"id": f"accepted-{len(accepted)}", "status": "accepted"}}
+
+    @upstream.tool
+    def place_option_order(symbol: str, side: str, qty: str) -> dict:
+        raise AssertionError("option deleveraging exception must never reach upstream")
+
+    log_path = tmp_path / "drawdown_deleveraging_audit.jsonl"
+    engine = PolicyEngine.from_yaml(
+        "policies/default.yaml",
+        audit_writer=AuditLogWriter(log_path, session_id="drawdown-deleveraging"),
+        bars_fetcher=_default_test_bars_fetcher,
+    )
+
+    def positions_fetcher():
+        timestamp = datetime.now(timezone.utc).isoformat()
+        position_reads.append(timestamp)
+        stamp("fresh_position_read", read=len(position_reads))
+        return account_data.PositionsResult(
+            ok=True,
+            positions={"AAPL": 1_000.0},
+            quantities={"AAPL": 10.0},
+            current_prices={"AAPL": 100.0},
+            fetched_at=time.time(),
+        )
+
+    proxy = build_proxy(
+        upstream,
+        engine,
+        positions_fetcher=positions_fetcher,
+        open_orders_fetcher=lambda prices: account_data.OpenOrdersResult(
+            ok=True, orders=(), aggregate_outstanding_notional=0.0
+        ),
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=-1_500.0, equity=100_000.0
+        ),
+    )
+
+    scenarios = [
+        ("sell_exact_holding", "place_stock_order",
+         {"symbol": "AAPL", "side": "sell", "qty": "10"}),
+        ("sell_flip_short", "place_stock_order",
+         {"symbol": "AAPL", "side": "sell", "qty": "11"}),
+        ("sell_zero_holding", "place_stock_order",
+         {"symbol": "MSFT", "side": "sell", "qty": "1"}),
+        ("option_sell", "place_option_order",
+         {"symbol": "AAPL260918C00100000", "side": "sell", "qty": "1"}),
+        ("buy_while_tripped", "place_stock_order",
+         {"symbol": "AAPL", "side": "buy", "qty": "1"}),
+    ]
+
+    async def run():
+        verdicts = {}
+        async with Client(proxy) as client:
+            for label, tool, arguments in scenarios:
+                stamp("attempt", scenario=label, tool=tool, arguments=arguments)
+                result = await client.call_tool(tool, arguments, raise_on_error=False)
+                verdicts[label] = {
+                    "blocked": result.is_error,
+                    "detail": result.content[0].text,
+                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                }
+        return verdicts
+
+    verdicts = asyncio.run(run())
+    audit_records = _read_records(log_path)
+    exception_records = [
+        record for record in audit_records
+        if record["verdict"] == "info"
+        and "DELEVERAGING_EXCEPTION_ALLOW" in record["reason"]
+    ]
+    freshness = {
+        "position_read_count": len(position_reads),
+        "reader": "explicit uncached fetcher used by _fresh_positions_fetcher",
+        "production_cache_ttl_assertion": "covered by test_live_reconciliation_reader_forces_zero_ttl",
+        "first_read": position_reads[0],
+        "last_read": position_reads[-1],
+    }
+    print("DELEVERAGING_TIMELINE=" + json.dumps(timeline, indent=2))
+    print("DELEVERAGING_VERDICTS=" + json.dumps(verdicts, indent=2))
+    print("DELEVERAGING_EXCEPTION_AUDIT=" + json.dumps(exception_records, indent=2))
+    print("DELEVERAGING_FRESHNESS=" + json.dumps(freshness, indent=2))
+
+    assert not verdicts["sell_exact_holding"]["blocked"]
+    assert verdicts["sell_flip_short"]["blocked"]
+    assert verdicts["sell_zero_holding"]["blocked"]
+    assert verdicts["option_sell"]["blocked"]
+    assert "option-orders-disabled" in verdicts["option_sell"]["detail"]
+    assert verdicts["buy_while_tripped"]["blocked"]
+    assert accepted == [{"symbol": "AAPL", "side": "sell", "qty": 10.0}]
+    assert len(exception_records) == 1
+    assert "broker_confirmed_held_qty=10" in exception_records[0]["reason"]
+    assert "order_qty=10" in exception_records[0]["reason"]
+    # Four plain-stock scenarios each perform the existing positions read
+    # plus two zero-TTL reconciliation reads. The option-shaped call performs
+    # the common pre-policy positions read, then hard-blocks before snapshot
+    # reconciliation or upstream submission: 4*3 + 1 = 13.
+    assert len(position_reads) == 13
+
+
+def test_nested_broker_order_result_is_parsed_recursively():
+    result = ToolResult(content=[TextContent(
+        type="text",
+        text=json.dumps({"data": {"result": json.dumps({
+            "order": {"id": "nested-123", "status": "filled"}
+        })}}),
+    )])
+    assert _parse_order_result(result) == ("nested-123", "filled")
+
+
+def test_fractional_quantity_normalization_is_exact():
+    arguments = {"qty": "0.75"}
+    _normalize_real_upstream_quantity(arguments)
+    assert arguments["quantity"] == 0.75
 
 
 def test_normal_call_is_forwarded_upstream(tmp_path):
@@ -537,7 +999,13 @@ def test_e4_reactivation_25_rapid_place_orders_trip_the_rate_throttle(tmp_path):
         return {"order_id": "fake-order", "status": "accepted"}
 
     engine, log_path = _real_policy_engine(tmp_path)
-    proxy = build_proxy(upstream, policy_engine=engine)
+    proxy = build_proxy(
+        upstream,
+        policy_engine=engine,
+        account_pnl_fetcher=lambda: account_data.AccountPnLResult(
+            ok=True, session_pnl_usd=0.0, equity=100_000.0
+        ),
+    )
 
     async def run():
         blocked = 0

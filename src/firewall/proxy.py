@@ -16,6 +16,7 @@ writes still leaves proof the call was attempted (see
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -27,7 +28,7 @@ from typing import Any, Callable
 
 from fastmcp import Client, FastMCP
 from fastmcp.tools import ToolResult
-from fastmcp.client.transports import UvxStdioTransport
+from fastmcp.client.transports import StdioTransport
 from fastmcp.exceptions import PromptError, ResourceError, ToolError
 from fastmcp.server import create_proxy
 from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
@@ -38,6 +39,7 @@ from mcp.types import (
     TextContent,
 )
 
+from broker_orders import parse_broker_order_result
 from firewall import account_data
 from firewall.audit import AuditLogWriter
 from firewall.order_history import OrderHistory
@@ -48,6 +50,7 @@ from firewall.rules._util import matches_any
 from firewall.rules.cvar_gate import CVaRGateRule
 from firewall.rules.drawdown_killswitch import DrawdownKillswitchRule
 from firewall.rules.hedge_proposal import HedgeProposalRule
+from firewall.rules.position_cap import PositionCapRule
 
 AccountPnLFetcher = Callable[[], "account_data.AccountPnLResult"]
 PositionsFetcher = Callable[[], "account_data.PositionsResult"]
@@ -154,6 +157,17 @@ def _coerce_float(value: Any) -> float | None:
         return None
 
 
+def _normalize_real_upstream_quantity(arguments: dict[str, Any]) -> None:
+    """Mirror qty into Alpaca's quantity field without losing fractions."""
+    if "qty" not in arguments or "quantity" in arguments:
+        return
+    try:
+        quantity = float(arguments["qty"])
+    except (ValueError, TypeError):
+        return
+    arguments["quantity"] = int(quantity) if quantity.is_integer() else quantity
+
+
 def _parse_order_result(result: Any) -> tuple[str | None, str]:
     """Best-effort (order_id, outcome) extraction from a successful
     place_*/replace_order_by_id call's ToolResult.
@@ -169,33 +183,16 @@ def _parse_order_result(result: Any) -> tuple[str | None, str]:
     (see e.g. pct_of_adv.py's "over-blocking ... is the correct failure
     direction").
     """
+    receipt = parse_broker_order_result(result)
     outcome = "open"
-    order_id: str | None = None
-    content = getattr(result, "content", None) or []
-    if not content:
-        return order_id, outcome
-    text = getattr(content[0], "text", None)
-    if not isinstance(text, str):
-        return order_id, outcome
-    try:
-        payload = json.loads(text)
-    except (json.JSONDecodeError, TypeError):
-        return order_id, outcome
-    if not isinstance(payload, dict):
-        return order_id, outcome
-
-    raw_id = payload.get("order_id") or payload.get("id")
-    if isinstance(raw_id, str) and raw_id:
-        order_id = raw_id
-
-    status = payload.get("status")
-    if isinstance(status, str):
-        status_lower = status.strip().lower()
-        if status_lower in _FILLED_STATUSES:
-            outcome = "filled"
-        elif status_lower in _CANCELLED_STATUSES:
-            outcome = "cancelled"
-    return order_id, outcome
+    status = receipt.status.strip().lower()
+    if status in _FILLED_STATUSES:
+        outcome = "filled"
+    elif status in _CANCELLED_STATUSES:
+        outcome = "cancelled"
+    elif status in {"rejected", "expired", "upstream_error"}:
+        outcome = "rejected"
+    return receipt.order_id, outcome
 
 
 class FirewallMiddleware(Middleware):
@@ -260,6 +257,7 @@ class FirewallMiddleware(Middleware):
         self.dry_run = dry_run
         self._order_history = OrderHistory()
         self._pnl_history = PnLHistory()
+        self._mutation_lock = asyncio.Lock()
         self._account_pnl_fetcher: AccountPnLFetcher = account_pnl_fetcher or (
             lambda: account_data.fetch_session_pnl(
                 timeout_seconds=session_pnl_timeout_seconds,
@@ -278,6 +276,16 @@ class FirewallMiddleware(Middleware):
                 ok=True, positions={}, quantities={}, current_prices={}, fetched_at=0.0
             ))
         )
+        self._fresh_positions_fetcher: PositionsFetcher = positions_fetcher or (
+            (
+                lambda: account_data.fetch_positions(
+                    timeout_seconds=positions_timeout_seconds,
+                    cache_ttl_seconds=0,
+                )
+            )
+            if is_real_upstream
+            else self._positions_fetcher
+        )
         self._open_orders_fetcher: OpenOrdersFetcher = open_orders_fetcher or (
             account_data.fetch_open_orders
             if is_real_upstream
@@ -293,6 +301,7 @@ class FirewallMiddleware(Middleware):
         self._drawdown_killswitch_rule = self._find_rule(
             "drawdown-killswitch", DrawdownKillswitchRule
         )
+        self._position_cap_rule = self._find_rule("position-cap-per-symbol", PositionCapRule)
         self._open_hedges: dict[str, str] = {}
         self._pending_informational_notes: list[str] = []
 
@@ -600,6 +609,17 @@ class FirewallMiddleware(Middleware):
         call_next: CallNext[CallToolRequestParams, Any],
     ) -> Any:
         tool_name = context.message.name
+        if matches_any(tool_name, _MUTATING_TOOL_PATTERNS):
+            async with self._mutation_lock:
+                return await self._handle_call_tool(context, call_next)
+        return await self._handle_call_tool(context, call_next)
+
+    async def _handle_call_tool(
+        self,
+        context: MiddlewareContext[CallToolRequestParams],
+        call_next: CallNext[CallToolRequestParams, Any],
+    ) -> Any:
+        tool_name = context.message.name
         arguments = context.message.arguments or {}
         _log_call(tool_name, arguments)
 
@@ -614,10 +634,14 @@ class FirewallMiddleware(Middleware):
         if tool_name == "place_stock_order":
             state["exposure_snapshot"] = account_data.fetch_consistent_exposure_snapshot(
                 {},
-                positions_fetcher=self._positions_fetcher,
+                positions_fetcher=self._fresh_positions_fetcher,
                 open_orders_fetcher=self._open_orders_fetcher,
             )
             state["exposure_snapshot"]["authoritative"] = self._exposure_authoritative
+            # The pending-exposure rule independently derives the maximum
+            # target from this production rule and its trusted market-data
+            # fetcher.  Caller reconciliation metadata is never authority.
+            state["position_cap_rule"] = self._position_cap_rule
         self._check_hedge_normalization(state)
         verdict = self.policy_engine.evaluate(tool_name, arguments, state)
         self._propose_hedge_if_triggered(tool_name, arguments, state)
@@ -656,11 +680,16 @@ class FirewallMiddleware(Middleware):
                 pending=pending,
             )
             dry_run_json = json.dumps(dry_run_result)
+            content = [TextContent(
+                type="text",
+                text=json.dumps({"result": dry_run_json}),
+            )]
+            content.extend(
+                TextContent(type="text", text=note)
+                for note in verdict.informational_notes
+            )
             return ToolResult(
-                content=[TextContent(
-                    type="text",
-                    text=json.dumps({"result": dry_run_json}),
-                )],
+                content=content,
                 structured_content={"result": dry_run_json},
             )
 
@@ -672,11 +701,7 @@ class FirewallMiddleware(Middleware):
         # exceptions (e.g. the upstream subprocess dying mid-call).
         # Normalize qty -> quantity for official alpaca-mcp-server schema compatibility
         if self.is_real_upstream and isinstance(context.message.arguments, dict):
-            if "qty" in context.message.arguments and "quantity" not in context.message.arguments:
-                try:
-                    context.message.arguments["quantity"] = int(float(context.message.arguments["qty"]))
-                except (ValueError, TypeError):
-                    pass
+            _normalize_real_upstream_quantity(context.message.arguments)
 
         if isinstance(context.message.arguments, dict):
             context.message.arguments.pop("_firewall_reconciliation", None)
@@ -706,7 +731,12 @@ class FirewallMiddleware(Middleware):
         self._track_order_lifecycle(
             tool_name,
             arguments,
-            now=state["now"],
+            # Record the broker-completion time, not the pre-check time.
+            # The position snapshot was fetched during this call, before
+            # submission; using state["now"] made a newly accepted order
+            # appear older than that snapshot and position_cap discarded it
+            # from in-flight exposure until Alpaca reflected it.
+            now=time.time(),
             hard_blocked=False,
             result=result,
             upstream_errored=(upstream_status == "error"),
@@ -717,6 +747,10 @@ class FirewallMiddleware(Middleware):
                 for note in self._pending_informational_notes:
                     content.append(TextContent(type="text", text=note))
                 self._pending_informational_notes.clear()
+        content = getattr(result, "content", None)
+        if isinstance(content, list):
+            for note in verdict.informational_notes:
+                content.append(TextContent(type="text", text=note))
         return result
 
     async def on_read_resource(
@@ -852,15 +886,24 @@ def _alpaca_client(policy_engine: PolicyEngine) -> Client:
     """
     _require_paper_trade_mode()
     _check_paper_key_prefix_heuristic(policy_engine)
-    transport = UvxStdioTransport(
-        tool_name="alpaca-mcp-server",
-        tool_args=["serve"],
-        with_packages=["fastmcp<2"],
-        env_vars={
-            "ALPACA_API_KEY": os.environ.get("ALPACA_API_KEY", ""),
-            "ALPACA_SECRET_KEY": os.environ.get("ALPACA_SECRET_KEY", ""),
-            "ALPACA_PAPER_TRADE": os.environ.get("ALPACA_PAPER_TRADE", "true"),
-        },
+    upstream_project = Path(__file__).resolve().parents[2] / "upstream_runtime"
+    upstream_env = os.environ.copy()
+    upstream_env.update({
+        "ALPACA_API_KEY": os.environ.get("ALPACA_API_KEY", ""),
+        "ALPACA_SECRET_KEY": os.environ.get("ALPACA_SECRET_KEY", ""),
+        "ALPACA_PAPER_TRADE": os.environ.get("ALPACA_PAPER_TRADE", "true"),
+    })
+    transport = StdioTransport(
+        command="uv",
+        args=[
+            "run",
+            "--frozen",
+            "--directory",
+            str(upstream_project),
+            "alpaca-mcp-server",
+            "serve",
+        ],
+        env=upstream_env,
     )
     return Client(transport)
 

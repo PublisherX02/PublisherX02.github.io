@@ -7,6 +7,7 @@ from __future__ import annotations
 import math
 
 import pytest
+import yaml
 
 from firewall.market_data import BarsResult, DailyBar
 from firewall.sizing_resolver import resolve_size
@@ -262,3 +263,25 @@ def test_uses_real_default_policy_by_default():
 
     assert result.constraints["notional_cap"] == 5000.0
     assert result.constraints["position_cap"] == 20000.0
+
+
+def test_configurable_cvar_equity_state_key_is_honored(tmp_path):
+    raw = yaml.safe_load(
+        __import__("pathlib").Path("policies/default.yaml").read_text(encoding="utf-8")
+    )
+    for rule in raw["rules"]:
+        if rule["id"] == "cvar-gate":
+            rule["account_equity_state_key"] = "net_liquidation_value"
+    policy = tmp_path / "custom-equity-key.yaml"
+    policy.write_text(yaml.safe_dump(raw), encoding="utf-8")
+    fetch = _fetcher(_dip_then_flat_bars(90), _flat_bars(30))
+
+    result = resolve_size(
+        "AAPL",
+        100.0,
+        {"net_liquidation_value": 100_000.0, "positions": {}},
+        policy_path=policy,
+        bars_fetcher=fetch,
+    )
+
+    assert result.constraints["cvar_max_size"] > 0

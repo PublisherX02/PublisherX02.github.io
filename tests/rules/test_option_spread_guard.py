@@ -175,3 +175,14 @@ def test_default_threshold_is_fifteen_percent():
     )
 
     assert outcome.triggered
+
+
+def test_crossed_quote_fails_closed():
+    rule, _ = _rule(_quote(bid=1.10, ask=1.00))
+    outcome = rule.check(
+        "place_option_order",
+        {"symbol": "AAPL260918P00220000", "side": "buy", "qty": "1"},
+        {},
+    )
+    assert outcome.triggered
+    assert "crossed option quote" in outcome.reason
