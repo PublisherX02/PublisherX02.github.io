@@ -3,8 +3,14 @@ services:
     name: backstop-safe-demo
     runtime: python
     plan: free
-    buildCommand: pip install -e .
-    startCommand: uvicorn web_demo:app --host 0.0.0.0 --port $PORT
+    buildCommand: >-
+      pip install -e . textual-serve==1.1.3 &&
+      mkdir -p data/cycles &&
+      cp demo_data/audit.jsonl audit.jsonl &&
+      cp demo_data/order_lifecycle.json data/order_lifecycle.json &&
+      cp demo_data/last_market_brief.json data/last_market_brief.json &&
+      cp demo_data/cycles/*.json data/cycles/
+    startCommand: python serve_dashboard.py
     healthCheckPath: /
     envVars:
       - key: ALPACA_PAPER_TRADE
