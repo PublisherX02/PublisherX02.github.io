@@ -767,6 +767,7 @@ class DashboardHeader(Static):
         chain_pass: bool | None,
         is_paused: bool,
         basket_data: dict[str, Any] | None,
+        account_unavailable: bool = False,
     ) -> None:
         # 1. Title bar status badges
         status_text = Text()
@@ -788,11 +789,21 @@ class DashboardHeader(Static):
         badges_label.update(status_text)
 
         # 2. Account Metrics Bar
-        eq_str = f"${equity:,.2f}" if equity is not None else "Fetching..."
+        if equity is not None:
+            eq_str = f"${equity:,.2f}"
+        elif account_unavailable:
+            eq_str = "OFFLINE (public demo snapshot, not broker-connected)"
+        else:
+            eq_str = "Fetching..."
         pnl_val = session_pnl or 0.0
         pnl_color = "#10b981" if pnl_val >= 0 else "#ef4444"
         pnl_prefix = "+" if pnl_val >= 0 else ""
-        pnl_str = f"{pnl_prefix}${pnl_val:,.2f}" if session_pnl is not None else "$0.00"
+        if session_pnl is not None:
+            pnl_str = f"{pnl_prefix}${pnl_val:,.2f}"
+        elif account_unavailable:
+            pnl_str = "N/A (offline)"
+        else:
+            pnl_str = "$0.00"
 
         budget_str = f"${equity * 0.90:,.2f} (90% NAV)" if equity else "—"
 
@@ -1224,6 +1235,7 @@ class FirewallDashboardApp(App):
         self._chain_count: int = 0
         self._bad_idx: int | None = None
         self._basket_cache: dict[str, Any] = {"status": "loading"}
+        self._account_unavailable: bool = False
         self._performance_summary: dict[str, Any] = {}
         self._lifecycle_summary: dict[str, Any] = load_lifecycle_summary()
         self._throttle_count: int = 0
@@ -1400,6 +1412,7 @@ class FirewallDashboardApp(App):
             chain_pass=self.chain_pass,
             is_paused=self.is_tail_paused,
             basket_data=self._basket_cache,
+            account_unavailable=self._account_unavailable,
         )
 
         # Side Panel -- killswitch/throttle "tripped/paused" is the OR of the
@@ -1522,6 +1535,7 @@ class FirewallDashboardApp(App):
                     "cash_w": max(0.0, 1.0 - sum(capped_weights.values())),
                 }
         except Exception as exc:
+            self._account_unavailable = True
             if "weights" in self._basket_cache:
                 self._basket_cache["status"] = "stale"
                 self._basket_cache["error"] = str(exc)

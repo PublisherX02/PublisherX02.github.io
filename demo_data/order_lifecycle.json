@@ -1,0 +1,2042 @@
+{
+  "mta-20260901T01190249910-SPY-s-01": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-01",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.697910+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.464166+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-02": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-02",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.703579+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.481330+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-03": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-03",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.708887+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.497731+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-04": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-04",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.716748+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.514301+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-05": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-05",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.725216+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.535194+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-06": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-06",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-06",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.730888+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.548101+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-07": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-07",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-07",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.737553+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.567347+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-08": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-08",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-08",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.737553+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.583978+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-09": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-09",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-09",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.747362+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.597409+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-10": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-10",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-10",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.751650+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.611718+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-11": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-11",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-11",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.759663+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.628529+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-12": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-12",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-12",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.767570+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.638906+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-13": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-13",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-13",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.768596+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.660900+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-14": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-14",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-14",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.778348+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.675038+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260901T01190249910-SPY-s-15": {
+    "cycle_id": "20260901T011902499108Z",
+    "symbol": "SPY",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260901T01190249910-SPY-s-15",
+    "order_id": "dry-run-mta-20260901T01190249910-SPY-s-15",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-01T01:19:13.780867+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-01T01:19:13.692968+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01384450416-AAPL-s-01": {
+    "cycle_id": "20260902T013844504162Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01384450416-AAPL-s-01",
+    "order_id": "dry-run-mta-20260902T01384450416-AAPL-s-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:39:19.106327+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:38:59.363391+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01384450416-AAPL-s-02": {
+    "cycle_id": "20260902T013844504162Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01384450416-AAPL-s-02",
+    "order_id": "dry-run-mta-20260902T01384450416-AAPL-s-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:39:19.116365+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:39:00.747699+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01384450416-AAPL-s-03": {
+    "cycle_id": "20260902T013844504162Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01384450416-AAPL-s-03",
+    "order_id": "dry-run-mta-20260902T01384450416-AAPL-s-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:39:19.124435+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:39:02.116847+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01384450416-AAPL-s-04": {
+    "cycle_id": "20260902T013844504162Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01384450416-AAPL-s-04",
+    "order_id": "dry-run-mta-20260902T01384450416-AAPL-s-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:39:19.131701+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:39:04.142631+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01384450416-AAPL-s-05": {
+    "cycle_id": "20260902T013844504162Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T01384450416-AAPL-s-05",
+    "order_id": "dry-run-mta-20260902T01384450416-AAPL-s-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:39:19.138360+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:39:05.487724+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01394993946-AAPL-s-01": {
+    "cycle_id": "20260902T013949939468Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01394993946-AAPL-s-01",
+    "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:40:20.902424+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:40:00.707658+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01394993946-AAPL-s-02": {
+    "cycle_id": "20260902T013949939468Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01394993946-AAPL-s-02",
+    "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:40:20.904446+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:40:02.051582+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01394993946-AAPL-s-03": {
+    "cycle_id": "20260902T013949939468Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01394993946-AAPL-s-03",
+    "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:40:20.904446+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:40:03.509261+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01394993946-AAPL-s-04": {
+    "cycle_id": "20260902T013949939468Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01394993946-AAPL-s-04",
+    "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:40:20.912918+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:40:05.317152+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01394993946-AAPL-s-05": {
+    "cycle_id": "20260902T013949939468Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T01394993946-AAPL-s-05",
+    "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:40:20.912918+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:40:06.558646+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01411965215-AAPL-s-01": {
+    "cycle_id": "20260902T014119652155Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01411965215-AAPL-s-01",
+    "order_id": "dry-run-mta-20260902T01411965215-AAPL-s-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:41:51.028377+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:41:31.135309+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01411965215-AAPL-s-02": {
+    "cycle_id": "20260902T014119652155Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01411965215-AAPL-s-02",
+    "order_id": "dry-run-mta-20260902T01411965215-AAPL-s-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:41:51.038122+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:41:32.540023+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01411965215-AAPL-s-03": {
+    "cycle_id": "20260902T014119652155Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01411965215-AAPL-s-03",
+    "order_id": "dry-run-mta-20260902T01411965215-AAPL-s-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:41:51.038122+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:41:33.822176+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01411965215-AAPL-s-04": {
+    "cycle_id": "20260902T014119652155Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 14,
+    "client_order_id": "mta-20260902T01411965215-AAPL-s-04",
+    "order_id": "dry-run-mta-20260902T01411965215-AAPL-s-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:41:51.051746+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:41:35.720003+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01411965215-AAPL-s-05": {
+    "cycle_id": "20260902T014119652155Z",
+    "symbol": "AAPL",
+    "side": "sell",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T01411965215-AAPL-s-05",
+    "order_id": "dry-run-mta-20260902T01411965215-AAPL-s-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:41:51.059436+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:41:37.217557+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-AAPL-b-01": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-AAPL-b-01",
+    "order_id": "dry-run-mta-20260902T01564816412-AAPL-b-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.062180+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:00.975673+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-MSFT-b-02": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "MSFT",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-MSFT-b-02",
+    "order_id": "dry-run-mta-20260902T01564816412-MSFT-b-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.068361+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:02.688729+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-SPY-b-03": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-SPY-b-03",
+    "order_id": "dry-run-mta-20260902T01564816412-SPY-b-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.072192+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:04.361809+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-QQQ-b-04": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "QQQ",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-QQQ-b-04",
+    "order_id": "dry-run-mta-20260902T01564816412-QQQ-b-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.072812+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:06.670072+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-GD-b-05": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-GD-b-05",
+    "order_id": "dry-run-mta-20260902T01564816412-GD-b-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.081585+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:08.485128+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-CACI-b-06": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "CACI",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-CACI-b-06",
+    "order_id": "dry-run-mta-20260902T01564816412-CACI-b-06",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.084915+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:10.292087+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-ACN-b-07": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "ACN",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-ACN-b-07",
+    "order_id": "dry-run-mta-20260902T01564816412-ACN-b-07",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.084915+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:12.532298+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-LDOS-b-08": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-LDOS-b-08",
+    "order_id": "dry-run-mta-20260902T01564816412-LDOS-b-08",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.092978+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:14.298260+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-NOC-b-09": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "NOC",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-NOC-b-09",
+    "order_id": "dry-run-mta-20260902T01564816412-NOC-b-09",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.093685+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:16.097268+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-BAH-b-10": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-BAH-b-10",
+    "order_id": "dry-run-mta-20260902T01564816412-BAH-b-10",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.098263+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:18.189451+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T01564816412-J-b-11": {
+    "cycle_id": "20260902T015648164125Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T01564816412-J-b-11",
+    "order_id": "dry-run-mta-20260902T01564816412-J-b-11",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T01:57:20.103762+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T01:57:20.052666+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-AAPL-b-01": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02035036253-AAPL-b-01",
+    "order_id": "dry-run-mta-20260902T02035036253-AAPL-b-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.036135+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:01.276628+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-SPY-b-02": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02035036253-SPY-b-02",
+    "order_id": "dry-run-mta-20260902T02035036253-SPY-b-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.036135+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:03.191717+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-GD-b-03": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02035036253-GD-b-03",
+    "order_id": "dry-run-mta-20260902T02035036253-GD-b-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.045744+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:04.995982+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-ACN-b-04": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "ACN",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02035036253-ACN-b-04",
+    "order_id": "dry-run-mta-20260902T02035036253-ACN-b-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.051625+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:07.236498+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-LDOS-b-05": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 2,
+    "client_order_id": "mta-20260902T02035036253-LDOS-b-05",
+    "order_id": "dry-run-mta-20260902T02035036253-LDOS-b-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.060943+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:08.916107+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-BAH-b-06": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 4,
+    "client_order_id": "mta-20260902T02035036253-BAH-b-06",
+    "order_id": "dry-run-mta-20260902T02035036253-BAH-b-06",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.070468+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:10.718494+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02035036253-J-b-07": {
+    "cycle_id": "20260902T020350362534Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 3,
+    "client_order_id": "mta-20260902T02035036253-J-b-07",
+    "order_id": "dry-run-mta-20260902T02035036253-J-b-07",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:04:13.070468+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:04:13.029205+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02050563031-AAPL-b-01": {
+    "cycle_id": "20260902T020505630315Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02050563031-AAPL-b-01",
+    "order_id": "7e0d6c9c-c1e5-4db7-a141-465a95888b92",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:05:27.307400+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:05:17.604192+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02145851021-SPY-b-01": {
+    "cycle_id": "20260902T021458510218Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02145851021-SPY-b-01",
+    "order_id": "dry-run-mta-20260902T02145851021-SPY-b-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:15:23.020025+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:11.259708+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02145851021-GD-b-02": {
+    "cycle_id": "20260902T021458510218Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02145851021-GD-b-02",
+    "order_id": "dry-run-mta-20260902T02145851021-GD-b-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:15:23.030969+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:13.424577+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02145851021-ACN-b-03": {
+    "cycle_id": "20260902T021458510218Z",
+    "symbol": "ACN",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02145851021-ACN-b-03",
+    "order_id": "dry-run-mta-20260902T02145851021-ACN-b-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:15:23.035485+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:16.198263+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02145851021-LDOS-b-04": {
+    "cycle_id": "20260902T021458510218Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 2,
+    "client_order_id": "mta-20260902T02145851021-LDOS-b-04",
+    "order_id": "dry-run-mta-20260902T02145851021-LDOS-b-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:15:23.035485+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:18.305727+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02145851021-BAH-b-05": {
+    "cycle_id": "20260902T021458510218Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 4,
+    "client_order_id": "mta-20260902T02145851021-BAH-b-05",
+    "order_id": "dry-run-mta-20260902T02145851021-BAH-b-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:15:23.041788+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:20.387962+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02145851021-J-b-06": {
+    "cycle_id": "20260902T021458510218Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 3,
+    "client_order_id": "mta-20260902T02145851021-J-b-06",
+    "order_id": "dry-run-mta-20260902T02145851021-J-b-06",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T02:15:23.041788+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:23.019228+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02153648495-SPY-b-01": {
+    "cycle_id": "20260902T021536484950Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02153648495-SPY-b-01",
+    "order_id": "1b65d024-aa0a-4104-b429-9a88e455a6c6",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:16:09.875416+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:48.674313+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02153648495-GD-b-02": {
+    "cycle_id": "20260902T021536484950Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02153648495-GD-b-02",
+    "order_id": "2e813c0e-d6a3-4106-8ef9-fd34a1c86e7f",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:16:11.001847+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:51.546843+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02153648495-ACN-b-03": {
+    "cycle_id": "20260902T021536484950Z",
+    "symbol": "ACN",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T02153648495-ACN-b-03",
+    "order_id": "869bf652-2d32-4c16-9aec-9598ce5889b1",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:16:12.135108+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:55.211201+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02153648495-LDOS-b-04": {
+    "cycle_id": "20260902T021536484950Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 2,
+    "client_order_id": "mta-20260902T02153648495-LDOS-b-04",
+    "order_id": "79c97d82-167c-4a97-b02e-5af95665415e",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:16:14.184859+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:15:59.155920+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02153648495-BAH-b-05": {
+    "cycle_id": "20260902T021536484950Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 4,
+    "client_order_id": "mta-20260902T02153648495-BAH-b-05",
+    "order_id": "2bf62477-ce9e-4eee-aa98-1985b267b5d1",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:16:15.292159+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:16:03.681648+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T02153648495-J-b-06": {
+    "cycle_id": "20260902T021536484950Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 3,
+    "client_order_id": "mta-20260902T02153648495-J-b-06",
+    "order_id": "961ab699-b67e-4111-862b-46d26d93db44",
+    "status": "accepted",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T02:16:16.401512+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T02:16:08.303408+00:00",
+        "status": "accepted",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-AAPL-b-02": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 82,
+    "client_order_id": "mta-20260902T13395775874-AAPL-b-02",
+    "order_id": "a458f049-8fc8-4790-89c2-00141b897d37",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:40:30.276479+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:40:30.276479+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-MSFT-b-04": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "MSFT",
+    "side": "buy",
+    "quantity": 17,
+    "client_order_id": "mta-20260902T13395775874-MSFT-b-04",
+    "order_id": "c3f5d0fe-f314-43f8-b47b-a1132901d674",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:40:38.475818+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:40:38.475818+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-SPY-b-06": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 65,
+    "client_order_id": "mta-20260902T13395775874-SPY-b-06",
+    "order_id": "2d099a5c-87fe-4283-97e9-3f6b6282ef7f",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:40:42.974385+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:40:42.974385+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-QQQ-b-09": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "QQQ",
+    "side": "buy",
+    "quantity": 70,
+    "client_order_id": "mta-20260902T13395775874-QQQ-b-09",
+    "order_id": "e189050d-76f7-4698-b36e-8cbdfbde4cdf",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:40:49.455651+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:40:49.455651+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-QQQ-b-10": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "QQQ",
+    "side": "buy",
+    "quantity": 65,
+    "client_order_id": "mta-20260902T13395775874-QQQ-b-10",
+    "order_id": "ef4bdb50-0696-4196-8db4-1cff9c9aab5f",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:40:51.928295+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:40:51.928295+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-GD-b-13": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 22,
+    "client_order_id": "mta-20260902T13395775874-GD-b-13",
+    "order_id": "adb2ce18-0168-4926-881c-a85d6680856a",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:40:58.372296+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:40:58.372296+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-LDOS-b-15": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 366,
+    "client_order_id": "mta-20260902T13395775874-LDOS-b-15",
+    "order_id": "f6c1a594-713f-4b10-bc14-739a814184cb",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:41:02.956365+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:41:02.956365+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T13395775874-LDOS-b-16": {
+    "cycle_id": "20260902T133957758741Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 80,
+    "client_order_id": "mta-20260902T13395775874-LDOS-b-16",
+    "order_id": "1565fd18-7693-4caf-a67a-465acb10ff7b",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T13:41:17.567345+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T13:41:17.567345+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-AAPL-b-01": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 15,
+    "client_order_id": "mta-20260902T17230936926-AAPL-b-01",
+    "order_id": "dry-run-mta-20260902T17230936926-AAPL-b-01",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.400765+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:24.611764+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-AAPL-b-02": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 8,
+    "client_order_id": "mta-20260902T17230936926-AAPL-b-02",
+    "order_id": "dry-run-mta-20260902T17230936926-AAPL-b-02",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.400765+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:25.743560+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-MSFT-b-03": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "MSFT",
+    "side": "buy",
+    "quantity": 10,
+    "client_order_id": "mta-20260902T17230936926-MSFT-b-03",
+    "order_id": "dry-run-mta-20260902T17230936926-MSFT-b-03",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.400765+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:27.289703+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-MSFT-b-04": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "MSFT",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T17230936926-MSFT-b-04",
+    "order_id": "dry-run-mta-20260902T17230936926-MSFT-b-04",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.416772+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:28.797447+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-SPY-b-05": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T17230936926-SPY-b-05",
+    "order_id": "dry-run-mta-20260902T17230936926-SPY-b-05",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.416772+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:30.410186+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-SPY-b-06": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T17230936926-SPY-b-06",
+    "order_id": "dry-run-mta-20260902T17230936926-SPY-b-06",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.416772+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:31.569236+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-SPY-b-07": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T17230936926-SPY-b-07",
+    "order_id": "dry-run-mta-20260902T17230936926-SPY-b-07",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.432367+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:32.711842+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-SPY-b-08": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 5,
+    "client_order_id": "mta-20260902T17230936926-SPY-b-08",
+    "order_id": "dry-run-mta-20260902T17230936926-SPY-b-08",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.432367+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:34.240729+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-QQQ-b-09": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "QQQ",
+    "side": "buy",
+    "quantity": 7,
+    "client_order_id": "mta-20260902T17230936926-QQQ-b-09",
+    "order_id": "dry-run-mta-20260902T17230936926-QQQ-b-09",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.432367+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:35.862365+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-QQQ-b-10": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "QQQ",
+    "side": "buy",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T17230936926-QQQ-b-10",
+    "order_id": "dry-run-mta-20260902T17230936926-QQQ-b-10",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.432367+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:36.991627+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-GD-b-11": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 13,
+    "client_order_id": "mta-20260902T17230936926-GD-b-11",
+    "order_id": "dry-run-mta-20260902T17230936926-GD-b-11",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.448322+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:38.553741+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-GD-b-12": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 13,
+    "client_order_id": "mta-20260902T17230936926-GD-b-12",
+    "order_id": "dry-run-mta-20260902T17230936926-GD-b-12",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.448322+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:40.145618+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-GD-b-13": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 3,
+    "client_order_id": "mta-20260902T17230936926-GD-b-13",
+    "order_id": "dry-run-mta-20260902T17230936926-GD-b-13",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.456385+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:41.314598+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-CACI-b-14": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "CACI",
+    "side": "buy",
+    "quantity": 7,
+    "client_order_id": "mta-20260902T17230936926-CACI-b-14",
+    "order_id": "dry-run-mta-20260902T17230936926-CACI-b-14",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.460633+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:42.902616+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-ACN-b-15": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "ACN",
+    "side": "buy",
+    "quantity": 21,
+    "client_order_id": "mta-20260902T17230936926-ACN-b-15",
+    "order_id": "dry-run-mta-20260902T17230936926-ACN-b-15",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.464387+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:44.395238+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-LDOS-b-16": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 37,
+    "client_order_id": "mta-20260902T17230936926-LDOS-b-16",
+    "order_id": "dry-run-mta-20260902T17230936926-LDOS-b-16",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.464387+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:46.406192+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-LDOS-b-17": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 8,
+    "client_order_id": "mta-20260902T17230936926-LDOS-b-17",
+    "order_id": "dry-run-mta-20260902T17230936926-LDOS-b-17",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.464387+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:47.657452+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-NOC-b-18": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "NOC",
+    "side": "buy",
+    "quantity": 9,
+    "client_order_id": "mta-20260902T17230936926-NOC-b-18",
+    "order_id": "dry-run-mta-20260902T17230936926-NOC-b-18",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.464387+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:49.346533+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-NOC-b-19": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "NOC",
+    "side": "buy",
+    "quantity": 7,
+    "client_order_id": "mta-20260902T17230936926-NOC-b-19",
+    "order_id": "dry-run-mta-20260902T17230936926-NOC-b-19",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.464387+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:50.460277+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-BAH-b-20": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 67,
+    "client_order_id": "mta-20260902T17230936926-BAH-b-20",
+    "order_id": "dry-run-mta-20260902T17230936926-BAH-b-20",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.480442+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:52.388166+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-BAH-b-21": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 12,
+    "client_order_id": "mta-20260902T17230936926-BAH-b-21",
+    "order_id": "dry-run-mta-20260902T17230936926-BAH-b-21",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.480442+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:53.540223+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-J-b-22": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 33,
+    "client_order_id": "mta-20260902T17230936926-J-b-22",
+    "order_id": "dry-run-mta-20260902T17230936926-J-b-22",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.480442+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:55.270777+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17230936926-J-b-23": {
+    "cycle_id": "20260902T172309369269Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 27,
+    "client_order_id": "mta-20260902T17230936926-J-b-23",
+    "order_id": "dry-run-mta-20260902T17230936926-J-b-23",
+    "status": "dry_run",
+    "terminal": true,
+    "submitted": false,
+    "updated_at": "2026-09-02T17:23:56.490264+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:23:56.400765+00:00",
+        "status": "dry_run",
+        "filled_qty": null,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-AAPL-b-01": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "AAPL",
+    "side": "buy",
+    "quantity": 15,
+    "client_order_id": "mta-20260902T17263703691-AAPL-b-01",
+    "order_id": "731a3d59-0df9-4aa1-9847-ed25f293f885",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:00.514957+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:26:47.581919+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-MSFT-b-04": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "MSFT",
+    "side": "buy",
+    "quantity": 1,
+    "client_order_id": "mta-20260902T17263703691-MSFT-b-04",
+    "order_id": "768c5c62-c9f7-4353-933c-ed15eb1608e9",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:01.664351+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:26:52.468095+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-SPY-b-06": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 6,
+    "client_order_id": "mta-20260902T17263703691-SPY-b-06",
+    "order_id": "8d7b78fb-3d14-4797-9dd6-37b427ce2c8f",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:03.183455+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:26:55.639064+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-SPY-b-08": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "SPY",
+    "side": "buy",
+    "quantity": 5,
+    "client_order_id": "mta-20260902T17263703691-SPY-b-08",
+    "order_id": "d002975c-e02a-4f38-9ca5-588adee06da9",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:04.724843+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:26:58.615912+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-GD-b-11": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "GD",
+    "side": "buy",
+    "quantity": 13,
+    "client_order_id": "mta-20260902T17263703691-GD-b-11",
+    "order_id": "1ea7e2ef-5be2-49d3-9e29-e392da5fbd80",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:05.860875+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:27:03.157934+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-ACN-b-15": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "ACN",
+    "side": "buy",
+    "quantity": 21,
+    "client_order_id": "mta-20260902T17263703691-ACN-b-15",
+    "order_id": "5c5a5ca7-d514-4dcb-adc5-e9e4fcd3c2c0",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:06.990488+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:27:09.137446+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-LDOS-b-16": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "LDOS",
+    "side": "buy",
+    "quantity": 37,
+    "client_order_id": "mta-20260902T17263703691-LDOS-b-16",
+    "order_id": "2f22e553-1aeb-402c-8ce3-d8e14c46c771",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:08.511891+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:27:47.497370+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-NOC-b-18": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "NOC",
+    "side": "buy",
+    "quantity": 9,
+    "client_order_id": "mta-20260902T17263703691-NOC-b-18",
+    "order_id": "16e767cc-3a38-47d2-ab7c-10387ba0e3a2",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:10.176556+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:27:51.380771+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-BAH-b-21": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "BAH",
+    "side": "buy",
+    "quantity": 12,
+    "client_order_id": "mta-20260902T17263703691-BAH-b-21",
+    "order_id": "9cdc5d89-a489-4d82-8bc2-ba89846efd0d",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:11.330911+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:27:55.669816+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  },
+  "mta-20260902T17263703691-J-b-23": {
+    "cycle_id": "20260902T172637036914Z",
+    "symbol": "J",
+    "side": "buy",
+    "quantity": 27,
+    "client_order_id": "mta-20260902T17263703691-J-b-23",
+    "order_id": "6514b518-c0a6-4b67-9b38-9bbcf3d541dc",
+    "status": "pending_new",
+    "terminal": false,
+    "submitted": true,
+    "updated_at": "2026-09-02T17:28:12.466101+00:00",
+    "history": [
+      {
+        "timestamp": "2026-09-02T17:27:59.356658+00:00",
+        "status": "pending_new",
+        "filled_qty": 0.0,
+        "filled_avg_price": null
+      }
+    ]
+  }
+}

@@ -1,0 +1,201 @@
+{
+  "cycle_id": "20260901T135748292660Z",
+  "execution_mode": "dry_run",
+  "finished_at": "2026-09-01T13:58:01.018552+00:00",
+  "account_equity": 97602.32,
+  "session_pnl_usd": -1608.8999999999942,
+  "budget_usd": 90000.0,
+  "open_order_reconciliation": {
+    "count": 0,
+    "aggregate_outstanding_notional": 0,
+    "pending_signed_qty_by_symbol": {}
+  },
+  "prices": {
+    "AAPL": 320.91,
+    "MSFT": 502.66,
+    "SPY": 761.66,
+    "QQQ": 707.34,
+    "GD": 371.075,
+    "CACI": 619.2,
+    "ACN": 187.785,
+    "LDOS": 139.99,
+    "NOC": 540.54,
+    "BAH": 75.76,
+    "J": 147.16
+  },
+  "realized_volatility": {
+    "AAPL": 0.019901432376197924,
+    "MSFT": 0.026445687449367913,
+    "SPY": 0.008622822417261236,
+    "QQQ": 0.016272728964844732,
+    "GD": 0.014348056525827697,
+    "CACI": 0.03482221313814586,
+    "ACN": 0.03821460870594987,
+    "LDOS": 0.02515466587712154,
+    "NOC": 0.018195897854144626,
+    "BAH": 0.02655750769062318,
+    "J": 0.017409179198137545
+  },
+  "target_weights": {
+    "AAPL": 0.08665290167160686,
+    "MSFT": 0.06520975739883933,
+    "SPY": 0.19999447737282167,
+    "QQQ": 0.10597588557791521,
+    "GD": 0.1201916691444962,
+    "CACI": 0.04952347100907543,
+    "ACN": 0.04512716265364536,
+    "LDOS": 0.06855654021575695,
+    "NOC": 0.09477503537567973,
+    "BAH": 0.06493519207104279,
+    "J": 0.09905790750912041
+  },
+  "weights_and_drift": {
+    "AAPL": {
+      "current_w": 0.3030816666666667,
+      "target_w": 0.08665290167160686,
+      "drift": 0.21642876499505984
+    },
+    "MSFT": {
+      "current_w": 0.011170222222222222,
+      "target_w": 0.06520975739883933,
+      "drift": 0.05403953517661711
+    },
+    "SPY": {
+      "current_w": 0.04231444444444444,
+      "target_w": 0.19999447737282167,
+      "drift": 0.15768003292837723
+    },
+    "QQQ": {
+      "current_w": 0.007859333333333334,
+      "target_w": 0.10597588557791521,
+      "drift": 0.09811655224458188
+    },
+    "GD": {
+      "current_w": 0.10719944444444443,
+      "target_w": 0.1201916691444962,
+      "drift": 0.012992224700051763
+    },
+    "CACI": {
+      "current_w": 0.04816000000000001,
+      "target_w": 0.04952347100907543,
+      "drift": 0.001363471009075419
+    },
+    "ACN": {
+      "current_w": 0.041729999999999996,
+      "target_w": 0.04512716265364536,
+      "drift": 0.0033971626536453622
+    },
+    "LDOS": {
+      "current_w": 0.06688411111111112,
+      "target_w": 0.06855654021575695,
+      "drift": 0.0016724291046458367
+    },
+    "NOC": {
+      "current_w": 0.09008999999999999,
+      "target_w": 0.09477503537567973,
+      "drift": 0.004685035375679741
+    },
+    "BAH": {
+      "current_w": 0.06313333333333333,
+      "target_w": 0.06493519207104279,
+      "drift": 0.0018018587377094525
+    },
+    "J": {
+      "current_w": 0.09647155555555556,
+      "target_w": 0.09905790750912041,
+      "drift": 0.0025863519535648527
+    }
+  },
+  "submitted_stock_orders": [],
+  "submitted_option_orders": [],
+  "blocked_orders": [
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 15,
+      "price": 320.91,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 15,
+      "price": 320.91,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 15,
+      "price": 320.91,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 15,
+      "price": 320.91,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 1,
+      "price": 320.91,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "MSFT",
+      "side": "buy",
+      "qty": 9,
+      "price": 502.66,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 6,
+      "price": 761.66,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 6,
+      "price": 761.66,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 6,
+      "price": 761.66,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "QQQ",
+      "side": "buy",
+      "qty": 6,
+      "price": 707.34,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "QQQ",
+      "side": "buy",
+      "qty": 6,
+      "price": 707.34,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    }
+  ]
+}
