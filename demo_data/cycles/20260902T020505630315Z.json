@@ -1,0 +1,185 @@
+{
+  "cycle_id": "20260902T020505630315Z",
+  "execution_mode": "paper",
+  "finished_at": "2026-09-02T02:05:27.838483+00:00",
+  "account_equity": 1000000.0,
+  "session_pnl_usd": 0.0,
+  "budget_usd": 5000.0,
+  "position_outcome_verification": {
+    "verified": true,
+    "reason": null
+  },
+  "open_order_reconciliation": {
+    "count": 0,
+    "aggregate_outstanding_notional": 0,
+    "pending_signed_qty_by_symbol": {},
+    "snapshot_fingerprint": "ef9698c539cfb2b5c4c39a2dac0e95900e3c29527c3a75bf0555e4a5d6da330a"
+  },
+  "prices": {
+    "AAPL": 325.25,
+    "MSFT": 501.19,
+    "SPY": 761.63,
+    "QQQ": 707.65,
+    "GD": 369.43,
+    "CACI": 629.61,
+    "ACN": 188.14,
+    "LDOS": 139.28,
+    "NOC": 532.8,
+    "BAH": 75.335,
+    "J": 146.34
+  },
+  "realized_volatility": {
+    "AAPL": 0.020262509984469736,
+    "MSFT": 0.026687553157640907,
+    "SPY": 0.00868295893337112,
+    "QQQ": 0.016393292247758786,
+    "GD": 0.014386023623587802,
+    "CACI": 0.03510923876659955,
+    "ACN": 0.03851267307148004,
+    "LDOS": 0.02538605521330099,
+    "NOC": 0.017852733123365327,
+    "BAH": 0.02667393634418753,
+    "J": 0.017518105714277758
+  },
+  "target_weights": {
+    "AAPL": 0.08554274702828052,
+    "MSFT": 0.06494828340091716,
+    "SPY": 0.1996221310108803,
+    "QQQ": 0.10573292658748722,
+    "GD": 0.12048574443583626,
+    "CACI": 0.04936907852893844,
+    "ACN": 0.045006244114566,
+    "LDOS": 0.06827806648948503,
+    "NOC": 0.09708937862802519,
+    "BAH": 0.0649814389370096,
+    "J": 0.0989439608385743
+  },
+  "weights_and_drift": {
+    "AAPL": {
+      "current_w": 0.0,
+      "target_w": 0.08554274702828052,
+      "drift": 0.08554274702828052
+    },
+    "MSFT": {
+      "current_w": 0.0,
+      "target_w": 0.06494828340091716,
+      "drift": 0.06494828340091716
+    },
+    "SPY": {
+      "current_w": 0.0,
+      "target_w": 0.1996221310108803,
+      "drift": 0.1996221310108803
+    },
+    "QQQ": {
+      "current_w": 0.0,
+      "target_w": 0.10573292658748722,
+      "drift": 0.10573292658748722
+    },
+    "GD": {
+      "current_w": 0.0,
+      "target_w": 0.12048574443583626,
+      "drift": 0.12048574443583626
+    },
+    "CACI": {
+      "current_w": 0.0,
+      "target_w": 0.04936907852893844,
+      "drift": 0.04936907852893844
+    },
+    "ACN": {
+      "current_w": 0.0,
+      "target_w": 0.045006244114566,
+      "drift": 0.045006244114566
+    },
+    "LDOS": {
+      "current_w": 0.0,
+      "target_w": 0.06827806648948503,
+      "drift": 0.06827806648948503
+    },
+    "NOC": {
+      "current_w": 0.0,
+      "target_w": 0.09708937862802519,
+      "drift": 0.09708937862802519
+    },
+    "BAH": {
+      "current_w": 0.0,
+      "target_w": 0.0649814389370096,
+      "drift": 0.0649814389370096
+    },
+    "J": {
+      "current_w": 0.0,
+      "target_w": 0.0989439608385743,
+      "drift": 0.0989439608385743
+    }
+  },
+  "submitted_stock_orders": [
+    {
+      "symbol": "AAPL",
+      "side": "buy",
+      "qty": 1,
+      "price": 325.25,
+      "broker": {
+        "order_id": "7e0d6c9c-c1e5-4db7-a141-465a95888b92",
+        "client_order_id": "mta-20260902T02050563031-AAPL-b-01",
+        "status": "accepted",
+        "submitted": true,
+        "filled": false,
+        "filled_qty": 0.0,
+        "filled_avg_price": null,
+        "raw_parseable": true
+      },
+      "client_order_id": "mta-20260902T02050563031-AAPL-b-01",
+      "timestamp": "2026-09-02T02:05:17.609250+00:00"
+    }
+  ],
+  "submitted_option_orders": [],
+  "blocked_orders": [
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 1,
+      "price": 761.63,
+      "rule": "pending-order-exposure",
+      "reason": "broker position/open-order exposure snapshot unavailable"
+    },
+    {
+      "symbol": "GD",
+      "side": "buy",
+      "qty": 1,
+      "price": 369.43,
+      "rule": "pending-order-exposure",
+      "reason": "broker position/open-order exposure snapshot unavailable"
+    },
+    {
+      "symbol": "ACN",
+      "side": "buy",
+      "qty": 1,
+      "price": 188.14,
+      "rule": "pending-order-exposure",
+      "reason": "broker position/open-order exposure snapshot unavailable"
+    },
+    {
+      "symbol": "LDOS",
+      "side": "buy",
+      "qty": 2,
+      "price": 139.28,
+      "rule": "pending-order-exposure",
+      "reason": "broker position/open-order exposure snapshot unavailable"
+    },
+    {
+      "symbol": "BAH",
+      "side": "buy",
+      "qty": 4,
+      "price": 75.335,
+      "rule": "pending-order-exposure",
+      "reason": "broker position/open-order exposure snapshot unavailable"
+    },
+    {
+      "symbol": "J",
+      "side": "buy",
+      "qty": 3,
+      "price": 146.34,
+      "rule": "pending-order-exposure",
+      "reason": "broker position/open-order exposure snapshot unavailable"
+    }
+  ]
+}

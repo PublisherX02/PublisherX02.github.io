@@ -1,0 +1,244 @@
+{
+  "text": "The portfolio exhibits a moderate liquidity posture with current ratios ranging from 1.0 to 1.63, indicating generally strong solvency across holdings. The portfolio is heavily weighted towards defense and federal IT contractors, representing 52.1% of the allocation, while commercial tech and enterprise IT companies make up 25.1%. There is a notable concentration in government contracts, with significant exposure to major defense primes like Northrop Grumman and Lockheed Martin. The portfolio maintains a balanced mix of both government and commercial sectors, though it leans more towards government contracts.",
+  "model": "Qwen/Qwen2.5-7B-Instruct",
+  "timestamp": "2026-09-02T17:28:18.618155+00:00",
+  "ok": true,
+  "cached": false,
+  "latency_seconds": 5.19,
+  "error_reason": null,
+  "context_summary": {
+    "basket_universe": [
+      "AAPL",
+      "ACN",
+      "BAH",
+      "CACI",
+      "GD",
+      "J",
+      "LDOS",
+      "MSFT",
+      "NOC",
+      "QQQ",
+      "SPY"
+    ],
+    "sec_edgar_current_ratios": {
+      "GD": 1.38,
+      "CACI": 1.48,
+      "LDOS": 1.63,
+      "NOC": 1.17,
+      "BAH": 1.59,
+      "MSFT": 1.23,
+      "AAPL": 1.0,
+      "ACN": 1.25,
+      "J": 1.42
+    },
+    "usaspending_subaward_links": {
+      "GD": {
+        "usable": false,
+        "total_subaward_dollar_flow_usd": 6758119924.100002,
+        "total_linked_entities": 7,
+        "top_partners": [
+          {
+            "entity_name": "NORTHROP GRUMMAN SYSTEMS CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 3105038542.46
+          },
+          {
+            "entity_name": "LOCKHEED MARTIN CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 2054880140.52
+          },
+          {
+            "entity_name": "BOEING COMPANY, THE",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 852573812.0
+          }
+        ]
+      },
+      "LDOS": {
+        "usable": true,
+        "total_subaward_dollar_flow_usd": 1726832289.3699996,
+        "total_linked_entities": 17,
+        "top_partners": [
+          {
+            "entity_name": "SCIENCE APPLICATIONS INTERNATIONAL CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 959949221.0
+          },
+          {
+            "entity_name": "LOCKHEED MARTIN CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 140420153.35999998
+          },
+          {
+            "entity_name": "EMPOWER AI, INC.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 97932713.0
+          }
+        ]
+      },
+      "CACI": {
+        "usable": true,
+        "total_subaward_dollar_flow_usd": 1086353582.6999998,
+        "total_linked_entities": 23,
+        "top_partners": [
+          {
+            "entity_name": "LOCKHEED MARTIN CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 198536953.16000003
+          },
+          {
+            "entity_name": "DELOITTE CONSULTING LLP",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 168497456.48
+          },
+          {
+            "entity_name": "SCIENCE APPLICATIONS INTERNATIONAL CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 157274830.0
+          }
+        ]
+      },
+      "NOC": {
+        "usable": false,
+        "total_subaward_dollar_flow_usd": 46404821245.250015,
+        "total_linked_entities": 1,
+        "top_partners": [
+          {
+            "entity_name": "LOCKHEED MARTIN CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 46404821245.250015
+          }
+        ]
+      },
+      "BAH": {
+        "usable": true,
+        "total_subaward_dollar_flow_usd": 2178219364.01,
+        "total_linked_entities": 24,
+        "top_partners": [
+          {
+            "entity_name": "CHEROKEE NATION STRATEGIC PROGRAMS, L.L.C.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 1124199634.0
+          },
+          {
+            "entity_name": "CACI, INC. - FEDERAL",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 177440673.0
+          },
+          {
+            "entity_name": "SALIENT CRGT, INC.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 144283190.93
+          }
+        ]
+      },
+      "J": {
+        "usable": false,
+        "total_subaward_dollar_flow_usd": 254425309.04,
+        "total_linked_entities": 8,
+        "top_partners": [
+          {
+            "entity_name": "INTEGRATION INNOVATION, INC.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 200385142.0
+          },
+          {
+            "entity_name": "SCIENCE APPLICATIONS INTERNATIONAL CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 29622740.48
+          },
+          {
+            "entity_name": "BAE SYSTEMS TECHNOLOGY SOLUTIONS & SERVICES INC.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 10372485.5
+          }
+        ]
+      },
+      "ACN": {
+        "usable": true,
+        "total_subaward_dollar_flow_usd": 3171940454.310001,
+        "total_linked_entities": 12,
+        "top_partners": [
+          {
+            "entity_name": "BOOZ ALLEN HAMILTON INC.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 2297554285.4500003
+          },
+          {
+            "entity_name": "SCIENCE APPLICATIONS INTERNATIONAL CORPORATION",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 222031807.0
+          },
+          {
+            "entity_name": "LEIDOS, INC.",
+            "relationship": "Prime Contractor (Subcontracted to Target)",
+            "total_amount_usd": 205707264.29
+          }
+        ]
+      }
+    },
+    "portfolio_allocation_by_group": {
+      "Defense & Federal IT Contractors (GD, LDOS, CACI, NOC, BAH, J)": "52.1%",
+      "Commercial Tech & Enterprise IT (AAPL, MSFT, ACN)": "25.1%",
+      "Broad Index ETFs (SPY, QQQ)": "22.7%",
+      "Cash Buffer": "0.0%"
+    },
+    "basket_weights": {
+      "AAPL": {
+        "current_w": "13.2%",
+        "target_w": "8.6%",
+        "drift": "4.6%"
+      },
+      "MSFT": {
+        "current_w": "1.3%",
+        "target_w": "6.5%",
+        "drift": "5.2%"
+      },
+      "SPY": {
+        "current_w": "22.7%",
+        "target_w": "20.0%",
+        "drift": "2.7%"
+      },
+      "QQQ": {
+        "current_w": "0.0%",
+        "target_w": "10.6%",
+        "drift": "10.6%"
+      },
+      "GD": {
+        "current_w": "12.8%",
+        "target_w": "12.0%",
+        "drift": "0.8%"
+      },
+      "CACI": {
+        "current_w": "0.0%",
+        "target_w": "4.9%",
+        "drift": "4.9%"
+      },
+      "ACN": {
+        "current_w": "10.6%",
+        "target_w": "4.5%",
+        "drift": "6.1%"
+      },
+      "LDOS": {
+        "current_w": "13.4%",
+        "target_w": "6.7%",
+        "drift": "6.7%"
+      },
+      "NOC": {
+        "current_w": "12.8%",
+        "target_w": "9.7%",
+        "drift": "3.1%"
+      },
+      "BAH": {
+        "current_w": "2.4%",
+        "target_w": "6.5%",
+        "drift": "4.1%"
+      },
+      "J": {
+        "current_w": "10.7%",
+        "target_w": "9.9%",
+        "drift": "0.8%"
+      }
+    }
+  }
+}

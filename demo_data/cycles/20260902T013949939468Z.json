@@ -1,0 +1,257 @@
+{
+  "cycle_id": "20260902T013949939468Z",
+  "execution_mode": "dry_run",
+  "finished_at": "2026-09-02T01:40:21.445339+00:00",
+  "account_equity": 97421.45,
+  "session_pnl_usd": -1789.770000000004,
+  "budget_usd": 87679.305,
+  "position_outcome_verification": {
+    "verified": true,
+    "reason": null
+  },
+  "open_order_reconciliation": {
+    "count": 0,
+    "aggregate_outstanding_notional": 0,
+    "pending_signed_qty_by_symbol": {},
+    "snapshot_fingerprint": "9b88f445a1389ed7a660d866d5d45f57412a6361aafd4649cfc2fcdbe2b29f96"
+  },
+  "prices": {
+    "AAPL": 325.25,
+    "MSFT": 501.19,
+    "SPY": 761.63,
+    "QQQ": 707.65,
+    "GD": 369.43,
+    "CACI": 629.61,
+    "ACN": 188.14,
+    "LDOS": 139.28,
+    "NOC": 532.8,
+    "BAH": 75.335,
+    "J": 146.34
+  },
+  "realized_volatility": {
+    "AAPL": 0.020262509984469736,
+    "MSFT": 0.026687553157640907,
+    "SPY": 0.008682958933371118,
+    "QQQ": 0.01639329224775878,
+    "GD": 0.014386023623587802,
+    "CACI": 0.03510923876659954,
+    "ACN": 0.03851267307148005,
+    "LDOS": 0.02538605521330099,
+    "NOC": 0.017852733123365327,
+    "BAH": 0.026673936344187535,
+    "J": 0.01751810571427776
+  },
+  "target_weights": {
+    "AAPL": 0.08554274702828055,
+    "MSFT": 0.06494828340091717,
+    "SPY": 0.19962213101088036,
+    "QQQ": 0.10573292658748729,
+    "GD": 0.12048574443583628,
+    "CACI": 0.049369078528938466,
+    "ACN": 0.045006244114565996,
+    "LDOS": 0.06827806648948505,
+    "NOC": 0.0970893786280252,
+    "BAH": 0.0649814389370096,
+    "J": 0.09894396083857429
+  },
+  "weights_and_drift": {
+    "AAPL": {
+      "current_w": 0.3153110075404909,
+      "target_w": 0.08554274702828055,
+      "drift": 0.22976826051221036
+    },
+    "MSFT": {
+      "current_w": 0.011432344268696017,
+      "target_w": 0.06494828340091717,
+      "drift": 0.05351593913222115
+    },
+    "SPY": {
+      "current_w": 0.04343271197234057,
+      "target_w": 0.19962213101088036,
+      "drift": 0.15618941903853978
+    },
+    "QQQ": {
+      "current_w": 0.00807088970424663,
+      "target_w": 0.10573292658748729,
+      "drift": 0.09766203688324065
+    },
+    "GD": {
+      "current_w": 0.10954899790777312,
+      "target_w": 0.12048574443583628,
+      "drift": 0.01093674652806316
+    },
+    "CACI": {
+      "current_w": 0.05026579533220525,
+      "target_w": 0.049369078528938466,
+      "drift": 0.0008967168032667852
+    },
+    "ACN": {
+      "current_w": 0.042915486157195246,
+      "target_w": 0.045006244114565996,
+      "drift": 0.0020907579573707508
+    },
+    "LDOS": {
+      "current_w": 0.06830619836687803,
+      "target_w": 0.06827806648948505,
+      "drift": 2.81318773929784e-05
+    },
+    "NOC": {
+      "current_w": 0.09115035754446274,
+      "target_w": 0.0970893786280252,
+      "drift": 0.005939021083562465
+    },
+    "BAH": {
+      "current_w": 0.0644408050451586,
+      "target_w": 0.0649814389370096,
+      "drift": 0.0005406338918509945
+    },
+    "J": {
+      "current_w": 0.09847318018773073,
+      "target_w": 0.09894396083857429,
+      "drift": 0.0004707806508435636
+    }
+  },
+  "submitted_stock_orders": [
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 14,
+      "price": 325.25,
+      "broker": {
+        "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-01",
+        "client_order_id": "mta-20260902T01394993946-AAPL-s-01",
+        "status": "dry_run",
+        "submitted": false,
+        "filled": false,
+        "filled_qty": null,
+        "filled_avg_price": null,
+        "raw_parseable": true
+      },
+      "client_order_id": "mta-20260902T01394993946-AAPL-s-01",
+      "timestamp": "2026-09-02T01:40:00.711796+00:00"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 14,
+      "price": 325.25,
+      "broker": {
+        "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-02",
+        "client_order_id": "mta-20260902T01394993946-AAPL-s-02",
+        "status": "dry_run",
+        "submitted": false,
+        "filled": false,
+        "filled_qty": null,
+        "filled_avg_price": null,
+        "raw_parseable": true
+      },
+      "client_order_id": "mta-20260902T01394993946-AAPL-s-02",
+      "timestamp": "2026-09-02T01:40:02.054287+00:00"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 14,
+      "price": 325.25,
+      "broker": {
+        "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-03",
+        "client_order_id": "mta-20260902T01394993946-AAPL-s-03",
+        "status": "dry_run",
+        "submitted": false,
+        "filled": false,
+        "filled_qty": null,
+        "filled_avg_price": null,
+        "raw_parseable": true
+      },
+      "client_order_id": "mta-20260902T01394993946-AAPL-s-03",
+      "timestamp": "2026-09-02T01:40:03.511844+00:00"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 14,
+      "price": 325.25,
+      "broker": {
+        "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-04",
+        "client_order_id": "mta-20260902T01394993946-AAPL-s-04",
+        "status": "dry_run",
+        "submitted": false,
+        "filled": false,
+        "filled_qty": null,
+        "filled_avg_price": null,
+        "raw_parseable": true
+      },
+      "client_order_id": "mta-20260902T01394993946-AAPL-s-04",
+      "timestamp": "2026-09-02T01:40:05.319692+00:00"
+    },
+    {
+      "symbol": "AAPL",
+      "side": "sell",
+      "qty": 6,
+      "price": 325.25,
+      "broker": {
+        "order_id": "dry-run-mta-20260902T01394993946-AAPL-s-05",
+        "client_order_id": "mta-20260902T01394993946-AAPL-s-05",
+        "status": "dry_run",
+        "submitted": false,
+        "filled": false,
+        "filled_qty": null,
+        "filled_avg_price": null,
+        "raw_parseable": true
+      },
+      "client_order_id": "mta-20260902T01394993946-AAPL-s-05",
+      "timestamp": "2026-09-02T01:40:06.561169+00:00"
+    }
+  ],
+  "submitted_option_orders": [],
+  "blocked_orders": [
+    {
+      "symbol": "MSFT",
+      "side": "buy",
+      "qty": 9,
+      "price": 501.19,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 6,
+      "price": 761.63,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 6,
+      "price": 761.63,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "SPY",
+      "side": "buy",
+      "qty": 5,
+      "price": 761.63,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "QQQ",
+      "side": "buy",
+      "qty": 6,
+      "price": 707.65,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    },
+    {
+      "symbol": "QQQ",
+      "side": "buy",
+      "qty": 6,
+      "price": 707.65,
+      "rule": "drawdown-killswitch",
+      "reason": "drawdown killswitch is tripped (session PnL breached $-1,000.00); order placement is blocked until reset"
+    }
+  ]
+}
